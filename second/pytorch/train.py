@@ -94,6 +94,7 @@ def example_convert_to_torch(example, dtype=torch.float32,
 def train(config_path,
           model_dir,
           result_path=None,
+          ckpt_path=None,
           create_folder=False,
           display_step=50,
           summary_step=5,
@@ -148,7 +149,11 @@ def train(config_path,
     # BUILD OPTIMIZER
     ######################
     # we need global_step to create lr_scheduler, so restore net first.
-    torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
+    if ckpt_path is None:
+        torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
+    else:
+        torchplus.train.restore(ckpt_path, net)
+
     gstep = net.get_global_step() - 1
     optimizer_cfg = train_cfg.optimizer
     if train_cfg.enable_mixed_precision:
