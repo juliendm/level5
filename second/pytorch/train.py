@@ -22,6 +22,14 @@ from second.pytorch.builder import (box_coder_builder, input_reader_builder,
 from second.utils.eval import get_coco_eval_result, get_official_eval_result
 from second.utils.progress_bar import ProgressBar
 
+#Note: tqdm has problem in my system(win10), so use my progress bar
+try:
+    from tqdm import tqdm as prog_bar
+except ImportError:
+    from second.utils.progress_bar import progress_bar_iter as prog_bar
+
+
+
 
 def _get_pos_neg_loss(cls_loss, labels):
     # cls_loss: [N, num_anchors, num_class]
@@ -354,9 +362,9 @@ def train(config_path,
             print("Generate output labels...", file=logf)
             t = time.time()
             dt_annos = []
-            prog_bar = ProgressBar()
-            prog_bar.start(len(eval_dataset) // eval_input_cfg.batch_size + 1)
-            for example in iter(eval_dataloader):
+            # prog_bar = ProgressBar()
+            # prog_bar.start(len(eval_dataset) // eval_input_cfg.batch_size + 1)
+            for example in prog_bar(iter(eval_dataloader)):
                 example = example_convert_to_torch(example, float_dtype)
                 if pickle_result:
                     dt_annos += predict_kitti_to_anno(
@@ -367,7 +375,7 @@ def train(config_path,
                                            class_names, center_limit_range,
                                            model_cfg.lidar_input)
 
-                prog_bar.print_bar()
+                #prog_bar.print_bar()
 
             sec_per_ex = len(eval_dataset) / (time.time() - t)
             print(f"avg forward time per example: {net.avg_forward_time:.3f}")
@@ -623,10 +631,11 @@ def evaluate(config_path,
     dt_annos = []
     global_set = None
     print("Generate output labels...")
-    bar = ProgressBar()
-    bar.start(len(eval_dataset) // input_cfg.batch_size + 1)
 
-    for example in iter(eval_dataloader):
+    # bar = ProgressBar()
+    # bar.start(len(eval_dataset) // input_cfg.batch_size + 1)
+
+    for example in prog_bar(iter(eval_dataloader)):
         example = example_convert_to_torch(example, float_dtype)
         if pickle_result:
             dt_annos += predict_kitti_to_anno(
@@ -635,7 +644,7 @@ def evaluate(config_path,
         else:
             _predict_kitti_to_file(net, example, result_path_step, class_names,
                                    center_limit_range, model_cfg.lidar_input)
-        bar.print_bar()
+        # bar.print_bar()
 
     sec_per_example = len(eval_dataset) / (time.time() - t)
     print(f'generate label finished({sec_per_example:.2f}/s). start eval:')
