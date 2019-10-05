@@ -659,9 +659,9 @@ def evaluate(config_path,
         print(result)
         result = get_coco_eval_result(gt_annos, dt_annos, class_names)
         print(result)
-        if pickle_result:
-            with open(result_path_step / "result.pkl", 'wb') as f:
-                pickle.dump(dt_annos, f)
+    if pickle_result:
+        with open(result_path_step / "result.pkl", 'wb') as f:
+            pickle.dump(dt_annos, f)
 
 
 if __name__ == '__main__':
