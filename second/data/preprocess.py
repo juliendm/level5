@@ -312,9 +312,24 @@ def _read_and_prep_v9(info, root_path, num_point_features, prep_func):
     v_path = v_path.parent.parent / (
         v_path.parent.stem + "_reduced") / v_path.name
 
+
+    # points = np.fromfile(
+    #     str(v_path), dtype=np.float32,
+    #     count=-1).reshape([-1, num_point_features])
+
+
     points = np.fromfile(
         str(v_path), dtype=np.float32,
-        count=-1).reshape([-1, num_point_features])
+        count=-1).reshape((-1, 5))[:, : 4]
+    
+
+    
+#     points = np.fromfile(
+#         str(v_path), dtype=np.float32,
+#         count=-1).reshape((-1, 4))
+#     points[:,3] = 100.0
+
+
     image_idx = info['image_idx']
     rect = info['calib/R0_rect'].astype(np.float32)
     Trv2c = info['calib/Tr_velo_to_cam'].astype(np.float32)

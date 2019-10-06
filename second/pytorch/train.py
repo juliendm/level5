@@ -168,8 +168,13 @@ def train(config_path,
     else:
         mixed_optimizer = optimizer
     # must restore optimizer AFTER using MixedPrecisionWrapper
-    torchplus.train.try_restore_latest_checkpoints(model_dir,
-                                                   [mixed_optimizer])
+
+    if ckpt_path is None:
+        torchplus.train.try_restore_latest_checkpoints(model_dir,
+                                                       [mixed_optimizer])
+    else:
+        torchplus.train.restore(ckpt_path, mixed_optimizer)
+
     lr_scheduler = lr_scheduler_builder.build(optimizer_cfg, optimizer, gstep)
     if train_cfg.enable_mixed_precision:
         float_dtype = torch.float16
