@@ -8,7 +8,8 @@ from tqdm import tqdm as prog_bar
 from skimage import io
 from PIL import Image
 
-
+import pandas as pd
+import plotly.graph_objects as go
 import numpy as np
 
 import glob
@@ -52,16 +53,14 @@ name_map_reverse = {
 # print(cs_record)
 
 
-level5_data = train
-annotations = True
-
-def create_level5_infos(level5_data, lyftdata, annotations=False):
+def create_level5_infos(level5_data_train, level5_data_test, lyftdata):
 
     level5_infos_train = []
     level5_infos_val = []
+    level5_infos_test = []
 
     random.seed(42)
-    random_index = range(len(level5_data))
+    random_index = range(len(level5_data_train))
     random.shuffle(random_index)
     sep = int(0.8*len(level5_data))
 
@@ -69,14 +68,18 @@ def create_level5_infos(level5_data, lyftdata, annotations=False):
     val_index = random_index[sep:]
 
     for index in prog_bar(train_index):
-        sample_data = create_sample_data(level5_data,lyftdata,index)
+        sample_data = create_sample_data(level5_data_train,lyftdata,index,annotations=True)
         level5_infos_train.append(sample_data)
 
     for index in prog_bar(val_index):
-        sample_data = create_sample_data(level5_data,lyftdata,index)
+        sample_data = create_sample_data(level5_data_train,lyftdata,index,annotations=True)
         level5_infos_val.append(sample_data)
 
-    return level5_infos_train, level5_infos_val
+    for index in prog_bar(range(len(level5_data_test))):
+        sample_data = create_sample_data(level5_infos_test,lyftdata,index,annotations=False)
+        level5_infos_test.append(sample_data)
+
+    return level5_infos_train, level5_infos_val, level5_infos_test
 
 def create_sample_data(level5_data,lyftdata,index):
 
@@ -220,7 +223,7 @@ def pred_to_submission(data,res):
     return df_submission
   
 
-def show_scene(data,res,index)
+def show_scene(data,res,index):
 
     points_v = np.fromfile('/content/data/'+data[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
 
