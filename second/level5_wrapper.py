@@ -18,7 +18,7 @@ from lyft_dataset_sdk.utils.data_classes import Box
 from lyft_dataset_sdk.lyftdataset import LyftDataset, LyftDatasetExplorer, Quaternion, view_points
 from lyft_dataset_sdk.utils.data_classes import LidarPointCloud
 
-
+import random
 
 
 
@@ -55,102 +55,121 @@ name_map_reverse = {
 level5_data = train
 annotations = True
 
-def create_level5_infos(level5_data, annotations=False):
+def create_level5_infos(level5_data, lyftdata, annotations=False):
 
-    level5_infos = []
+    level5_infos_train = []
+    level5_infos_val = []
 
-    for index in prog_bar(range(len(level5_data))):
+    random.seed(42)
+    random_index = range(len(level5_data))
+    random.shuffle(random_index)
+    sep = int(0.8*len(level5_data))
 
-        token = level5_data.iloc[index]['Id']
+    train_index = random_index[:sep]
+    val_index = random_index[sep:]
 
-        sample = lyftdata.get('sample', token)
+    for index in prog_bar(train_index):
+        sample_data = create_sample_data(level5_data,lyftdata,index)
+        level5_infos_train.append(sample_data)
 
+    for index in prog_bar(val_index):
+        sample_data = create_sample_data(level5_data,lyftdata,index)
+        level5_infos_val.append(sample_data)
 
-        sample_data = {}
-        sample_data['image_idx'] = index
-        sample_data['level5_token'] = token
-        sample_data['pointcloud_num_features'] = 5
+    return level5_infos_train, level5_infos_val
 
-        sample_image = lyftdata.get('sample_data',sample['data']['CAM_FRONT'])
-        sample_data['img_path'] = sample_image['filename']
+def create_sample_data(level5_data,lyftdata,index):
 
-        sample_lidar = lyftdata.get('sample_data',sample['data']['LIDAR_TOP'])
-        sample_data['velodyne_path'] = sample_lidar['filename']
+    token = level5_data.iloc[index]['Id']
 
-        if annotations:
-
-            annos = {}
-
-            # print(level5_data.iloc[index]['PredictionString'])
-
-            annos['name'] =  []
-            annos['dimensions'] = []
-            annos['location'] =  []
-            annos['rotation_y'] = []
-            annos['truncated'] = []
-            annos['occluded'] = []
-            annos['bbox'] = []
-            annos['score'] = []
-            annos['alpha'] = []
-            annos['difficulty'] = []
-
-            _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
-
-            for box in boxes:
-
-                # lidar_to_world(box,sample['data']['LIDAR_TOP'])
-
-                annos['name'].append(name_map[box.name])
-                annos['dimensions'].append(list(box.wlh))   #[box.wlh[1],box.wlh[2],box.wlh[0]]       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
-                annos['location'].append(list(box.center))
-                annos['rotation_y'].append(box.orientation.radians)               # Check if this is ok
-                annos['truncated'].append(0.0)
-                annos['occluded'].append(0)
-                annos['bbox'].append([0,0,0,0])
-                annos['score'].append(0)
-                annos['alpha'].append(0.0) # Does not seem to be used in training
-                annos['difficulty'].append(0) # done by add_difficulty_to_annos(sample_data)
-
-            annos['name'] = np.array(annos['name'])
-            annos['dimensions'] = np.array(annos['dimensions'])
-            annos['location'] = np.array(annos['location'])
-            annos['rotation_y'] = np.array(annos['rotation_y'])
-            annos['truncated'] = np.array(annos['truncated'])
-            annos['occluded'] = np.array(annos['occluded'])
-            annos['bbox'] = np.array(annos['bbox'])
-            annos['score'] = np.array(annos['score'])
-            annos['alpha'] = np.array(annos['alpha'])
-            annos['difficulty'] = np.array(annos['difficulty'])
-
-            num_objects = len(annos['name'])
-            
-            annos['index'] = np.arange(num_objects, dtype=np.int32)
-            annos['group_ids'] = np.arange(num_objects, dtype=np.int32)
+    sample = lyftdata.get('sample', token)
 
 
-            annos['num_points_in_gt'] = np.array([]) # done by _calculate_num_points_in_gt , remove outside False
+    sample_data = {}
+    sample_data['image_idx'] = index
+    sample_data['level5_token'] = token
+    sample_data['pointcloud_num_features'] = 5
 
-            sample_data['annos'] = annos
-          
+    sample_image = lyftdata.get('sample_data',sample['data']['CAM_FRONT'])
+    sample_data['img_path'] = sample_image['filename']
+
+    sample_lidar = lyftdata.get('sample_data',sample['data']['LIDAR_TOP'])
+    sample_data['velodyne_path'] = sample_lidar['filename']
+
+    if annotations:
+
+        annos = {}
+
+        # print(level5_data.iloc[index]['PredictionString'])
+
+        annos['name'] =  []
+        annos['dimensions'] = []
+        annos['location'] =  []
+        annos['rotation_y'] = []
+        annos['truncated'] = []
+        annos['occluded'] = []
+        annos['bbox'] = []
+        annos['score'] = []
+        annos['alpha'] = []
+        annos['difficulty'] = []
+
+        _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+
+        for box in boxes:
+
+            # lidar_to_world(box,sample['data']['LIDAR_TOP'])
+
+            annos['name'].append(name_map[box.name])
+            annos['dimensions'].append(list(box.wlh))   #[box.wlh[1],box.wlh[2],box.wlh[0]]       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
+            annos['location'].append(list(box.center))
+            annos['rotation_y'].append(box.orientation.radians)               # Check if this is ok
+            annos['truncated'].append(0.0)
+            annos['occluded'].append(0)
+            annos['bbox'].append([0,0,0,0])
+            annos['score'].append(0)
+            annos['alpha'].append(0.0) # Does not seem to be used in training
+            annos['difficulty'].append(0) # done by add_difficulty_to_annos(sample_data)
+
+        annos['name'] = np.array(annos['name'])
+        annos['dimensions'] = np.array(annos['dimensions'])
+        annos['location'] = np.array(annos['location'])
+        annos['rotation_y'] = np.array(annos['rotation_y'])
+        annos['truncated'] = np.array(annos['truncated'])
+        annos['occluded'] = np.array(annos['occluded'])
+        annos['bbox'] = np.array(annos['bbox'])
+        annos['score'] = np.array(annos['score'])
+        annos['alpha'] = np.array(annos['alpha'])
+        annos['difficulty'] = np.array(annos['difficulty'])
+
+        num_objects = len(annos['name'])
+        
+        annos['index'] = np.arange(num_objects, dtype=np.int32)
+        annos['group_ids'] = np.arange(num_objects, dtype=np.int32)
+
+
+        annos['num_points_in_gt'] = np.array([]) # done by _calculate_num_points_in_gt , remove outside False
+
+        sample_data['annos'] = annos
       
-        sample_data['calib/R0_rect'] = np.array([[ 1.        ,  0.        ,  0.        ,  0.        ],
-                                               [ 0.        ,  1.        ,  0.        ,  0.        ],
-                                               [ 0.        ,  0.        ,  1.        ,  0.        ],
-                                               [ 0.        ,  0.        ,  0.        ,  1.        ]])     
-        sample_data['calib/Tr_velo_to_cam'] = np.array([[ 1.000000e+00,  0.000000e+00,  0.000000e+00,  0.000000e+00],
-                                                      [ 0.000000e+00,  1.000000e+00,  0.000000e+00,  0.000000e+00],
-                                                      [ 0.000000e+00,  0.000000e+00,  1.000000e+00,  0.000000e+00],
-                                                      [ 0.000000e+00,  0.000000e+00,  0.000000e+00,  1.000000e+00]])
+  
+    sample_data['calib/R0_rect'] = np.array([[ 1.        ,  0.        ,  0.        ,  0.        ],
+                                           [ 0.        ,  1.        ,  0.        ,  0.        ],
+                                           [ 0.        ,  0.        ,  1.        ,  0.        ],
+                                           [ 0.        ,  0.        ,  0.        ,  1.        ]])     
+    sample_data['calib/Tr_velo_to_cam'] = np.array([[ 1.000000e+00,  0.000000e+00,  0.000000e+00,  0.000000e+00],
+                                                  [ 0.000000e+00,  1.000000e+00,  0.000000e+00,  0.000000e+00],
+                                                  [ 0.000000e+00,  0.000000e+00,  1.000000e+00,  0.000000e+00],
+                                                  [ 0.000000e+00,  0.000000e+00,  0.000000e+00,  1.000000e+00]])
 
-        # IMPROVE !!!!!!!!!!!!!
-        sample_data['img_shape'] = np.array([ 375, 1242], dtype=np.int32) # image_info['img_shape'] = np.array(io.imread(img_path).shape[:2], dtype=np.int32)
-        sample_data['calib/P2'] = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02, 4.485728e+01],
-                                          [0.000000e+00, 7.215377e+02, 1.728540e+02, 2.163791e-01],
-                                          [0.000000e+00, 0.000000e+00, 1.000000e+00, 2.745884e-03],
-                                          [0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00]])
+    # IMPROVE !!!!!!!!!!!!!
+    sample_data['img_shape'] = np.array([ 375, 1242], dtype=np.int32) # image_info['img_shape'] = np.array(io.imread(img_path).shape[:2], dtype=np.int32)
+    sample_data['calib/P2'] = np.array([[7.215377e+02, 0.000000e+00, 6.095593e+02, 4.485728e+01],
+                                      [0.000000e+00, 7.215377e+02, 1.728540e+02, 2.163791e-01],
+                                      [0.000000e+00, 0.000000e+00, 1.000000e+00, 2.745884e-03],
+                                      [0.000000e+00, 0.000000e+00, 0.000000e+00, 1.000000e+00]])
 
-        level5_infos.append(sample_data)
-      
+
+    return sample_data
 
       
 def lidar_to_world(box,lidar_top_token): # sample['data']['LIDAR_TOP']
@@ -282,4 +301,62 @@ def show_scene(data,res,index)
     fig = go.Figure(data=[scatter, lines])
     fig.update_layout(scene_aspectmode='data')
     fig.show()
+
+
+def show_slice(data,res,index):
+
+
+    # loc = case['location']
+    # dim = case['dimensions']
+    # angle = case['rotation_y']
+
+
+    # box = np.concatenate((loc,dim,angle.reshape(-1,1)),axis=1)
+    # box = torch.as_tensor(box, dtype=torch.float16, device = torch.device("cuda:0"))
+    # rect = np.array([[ 1.        ,  0.        ,  0.        ,  0.        ],
+    #                  [ 0.        ,  1.        ,  0.        ,  0.        ],
+    #                  [ 0.        ,  0.        ,  1.        ,  0.        ],
+    #                  [ 0.        ,  0.        ,  0.        ,  1.        ]])     
+    # rect = torch.as_tensor(rect, dtype=torch.float16, device = torch.device("cuda:0"))
+    # Trv2c = np.array([[ 1.000000e+00,  0.000000e+00,  0.000000e+00,  0.000000e+00],
+    #                   [ 0.000000e+00,  1.000000e+00,  0.000000e+00,  0.000000e+00],
+    #                   [ 0.000000e+00,  0.000000e+00,  1.000000e+00,  0.000000e+00],
+    #                   [ 0.000000e+00,  0.000000e+00,  0.000000e+00,  1.000000e+00]])
+    # Trv2c = torch.as_tensor(Trv2c, dtype=torch.float16, device = torch.device("cuda:0"))
+    # #box = box_torch_ops.box_lidar_to_camera(box, rect, Trv2c)
+    # box = box.cpu().numpy()
+    # loc = box[:, :3]
+    # dim = box[:, 3:6]
+    # angle = box[:, 6]
+
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 8))
+    ax.set_facecolor('black')
+    ax.grid(False)
+
+    points_v = np.fromfile('/content/data/'+data[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+
+    case = res[index]
+
+    score = case['score']
+    number = len(np.where(score>0.4)[0])
+      
+    ax.scatter(points_v[:, 0], points_v[:, 1], s=0.01, c="white", cmap='grey')
+
+    #points_v = np.fromfile('/content/data/train_lidar/host-a004_lidar1_1232815254300468606.bin', dtype=np.float32, count=-1).reshape([-1, 5])
+    #loc = res[index]['location']
+    #ax.scatter(points_v[:, 0], points_v[:, 3], s=0.01, c="green", cmap='grey')
+
+
+
+    ax.scatter(loc[:number,2], -loc[:number,0], s=10, c="red", cmap='grey')
+
+    ax.scatter(loc[:number,2]-dim[:number,0]/2.0, -loc[:number,0]-dim[:number,2]/2.0, s=10, c="green", cmap='grey')
+    ax.scatter(loc[:number,2]+dim[:number,0]/2.0, -loc[:number,0]-dim[:number,2]/2.0, s=10, c="green", cmap='grey')
+    ax.scatter(loc[:number,2]-dim[:number,0]/2.0, -loc[:number,0]+dim[:number,2]/2.0, s=10, c="green", cmap='grey')
+    ax.scatter(loc[:number,2]+dim[:number,0]/2.0, -loc[:number,0]+dim[:number,2]/2.0, s=10, c="green", cmap='grey')
+
+    ax.set_xlim(-20,100)
+    ax.set_ylim(-50,25)
+
 
