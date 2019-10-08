@@ -53,7 +53,7 @@ name_map_reverse = {
 # print(cs_record)
 
 
-def create_level5_infos(level5_data_train, level5_data_test, lyftdata):
+def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyftdata_test):
 
     level5_infos_train = []
     level5_infos_val = []
@@ -68,15 +68,15 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata):
     val_index = random_index[sep:]
 
     for index in prog_bar(train_index):
-        sample_data = create_sample_data(level5_data_train,lyftdata,index,annotations=True)
+        sample_data = create_sample_data(level5_data_train,lyftdata_train,index,annotations=True)
         level5_infos_train.append(sample_data)
 
     for index in prog_bar(val_index):
-        sample_data = create_sample_data(level5_data_train,lyftdata,index,annotations=True)
+        sample_data = create_sample_data(level5_data_train,lyftdata_train,index,annotations=True)
         level5_infos_val.append(sample_data)
 
     for index in prog_bar(range(len(level5_data_test))):
-        sample_data = create_sample_data(level5_infos_test,lyftdata,index,annotations=False)
+        sample_data = create_sample_data(level5_data_test,lyftdata_test,index,annotations=False)
         level5_infos_test.append(sample_data)
 
     return level5_infos_train, level5_infos_val, level5_infos_test
