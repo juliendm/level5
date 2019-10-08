@@ -25,13 +25,13 @@ def _read_imageset_file(path):
 
 
 def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=True, num_features=4):
-    for info in infos:
+    for info in prog_bar(infos):
         if relative_path:
             v_path = str(pathlib.Path(data_path) / info["velodyne_path"])
         else:
             v_path = info["velodyne_path"]
         points_v = np.fromfile(
-            v_path, dtype=np.float32, count=-1).reshape([-1, num_features])
+            v_path, dtype=np.float32, count=-1).reshape([-1, num_features])[:, : num_features-1]
         rect = info['calib/R0_rect']
         Trv2c = info['calib/Tr_velo_to_cam']
         P2 = info['calib/P2']
@@ -227,7 +227,7 @@ def create_groundtruth_database(data_path,
         if 'pointcloud_num_features' in info:
             num_features = info['pointcloud_num_features']
         points = np.fromfile(
-            velodyne_path, dtype=np.float32, count=-1).reshape([-1, num_features])
+            velodyne_path, dtype=np.float32, count=-1).reshape([-1, num_features])[:, : num_features-1]
 
         image_idx = info["image_idx"]
         rect = info['calib/R0_rect']
