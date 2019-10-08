@@ -60,9 +60,9 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata):
     level5_infos_test = []
 
     random.seed(42)
-    random_index = range(len(level5_data_train))
+    random_index = np.arange(len(level5_data_train))
     random.shuffle(random_index)
-    sep = int(0.8*len(level5_data))
+    sep = int(0.8*len(level5_data_train))
 
     train_index = random_index[:sep]
     val_index = random_index[sep:]
@@ -81,12 +81,11 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata):
 
     return level5_infos_train, level5_infos_val, level5_infos_test
 
-def create_sample_data(level5_data,lyftdata,index):
+def create_sample_data(level5_data,lyftdata,index,annotations=False):
 
     token = level5_data.iloc[index]['Id']
 
     sample = lyftdata.get('sample', token)
-
 
     sample_data = {}
     sample_data['image_idx'] = index
@@ -149,8 +148,7 @@ def create_sample_data(level5_data,lyftdata,index):
         annos['index'] = np.arange(num_objects, dtype=np.int32)
         annos['group_ids'] = np.arange(num_objects, dtype=np.int32)
 
-
-        annos['num_points_in_gt'] = np.array([]) # done by _calculate_num_points_in_gt , remove outside False
+        # annos['num_points_in_gt'] = np.array([]) # done by _calculate_num_points_in_gt , remove outside False
 
         sample_data['annos'] = annos
       
