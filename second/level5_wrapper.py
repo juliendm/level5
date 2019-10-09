@@ -303,6 +303,76 @@ def show_scene(data,res,index):
     fig.update_layout(scene_aspectmode='data')
     fig.show()
 
+def show_grounds(level5_infos_train,index):
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+    ax.set_facecolor('black')
+    ax.grid(False)
+
+    points_v = np.fromfile('/content/level5_data/train/'+level5_infos_train[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+    ax.scatter(points_v[:, 0], points_v[:, 1], s=0.1, c="white", cmap='grey')
+
+    loc = level5_infos_train[index]['annos']['location']
+    dim = level5_infos_train[index]['annos']['dimensions']
+    yaw = level5_infos_train[index]['annos']['rotation_y']
+
+    names = level5_infos_train[index]['annos']['name']
+    for index_obj in range(10):
+      
+        obj = np.fromfile('/content/gdrive/My Drive/Kaggle_Level5_Alumni/level5_data/gt_database/'+str(level5_infos_train[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+        ax.scatter(obj[:, 0]+loc[index_obj, 0], obj[:, 1]+loc[index_obj, 1], s=0.1, c="red", cmap='grey')
+
+    for index_obj in range(10):
+
+        cos_angle = np.cos(yaw[index_obj]/2.0)
+        sin_angle = np.sin(yaw[index_obj]/2.0)
+
+        point_0_x = loc[index_obj,0] + dim[index_obj,0] / 2 * cos_angle + dim[index_obj,1] / 2 * sin_angle
+        point_0_y = loc[index_obj,1] + dim[index_obj,0] / 2 * sin_angle - dim[index_obj,1] / 2 * cos_angle
+        ax.scatter(point_0_x, point_0_y, s=100, c="green", cmap='grey')
+
+        point_1_x = loc[index_obj,0] + dim[index_obj,0] / 2 * cos_angle - dim[index_obj,1] / 2 * sin_angle
+        point_1_y = loc[index_obj,1] + dim[index_obj,0] / 2 * sin_angle + dim[index_obj,1] / 2 * cos_angle
+        ax.scatter(point_1_x, point_1_y, s=100, c="green", cmap='grey')
+
+        point_2_x = loc[index_obj,0] - dim[index_obj,0] / 2 * cos_angle - dim[index_obj,1] / 2 * sin_angle
+        point_2_y = loc[index_obj,1] - dim[index_obj,0] / 2 * sin_angle + dim[index_obj,1] / 2 * cos_angle
+        ax.scatter(point_2_x, point_2_y, s=100, c="green", cmap='grey')
+
+        point_3_x = loc[index_obj,0] - dim[index_obj,0] / 2 * cos_angle + dim[index_obj,1] / 2 * sin_angle
+        point_3_y = loc[index_obj,1] - dim[index_obj,0] / 2 * sin_angle - dim[index_obj,1] / 2 * cos_angle
+        ax.scatter(point_3_x, point_3_y, s=100, c="green", cmap='grey')
+
+    ax.set_xlim(-30,30)
+    ax.set_ylim(-30,30)
+
+
+
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 5))
+    ax.set_facecolor('black')
+    ax.grid(False)
+
+    points_v = np.fromfile('/content/level5_data/train/'+level5_infos_train[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+
+
+    filter_index = [value for value in np.where(points_v[:, 0]> -10)[0] if value in np.where(points_v[:, 0]< 100)[0]]  
+    ax.scatter(points_v[filter_index, 1], points_v[filter_index, 2], s=0.1, c="white", cmap='grey')
+
+    ax.set_xlim(-30,30)
+    ax.set_ylim(-5,5)
+
+    loc = level5_infos_train[index]['annos']['location']
+    dim = level5_infos_train[index]['annos']['dimensions']
+    yaw = level5_infos_train[index]['annos']['rotation_y']
+
+    names = level5_infos_train[index]['annos']['name']
+    for index_obj in range(10):
+      
+        obj = np.fromfile('/content/gdrive/My Drive/Kaggle_Level5_Alumni/level5_data/gt_database/'+str(level5_infos_train[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+        ax.scatter(obj[:, 1]+loc[index_obj, 1], obj[:, 2]+loc[index_obj, 2], s=0.1, c="red", cmap='grey')
+
+
 
 def show_slice(data,res,index):
 
