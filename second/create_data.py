@@ -31,7 +31,16 @@ def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=
         else:
             v_path = info["velodyne_path"]
         points_v = np.fromfile(
-            v_path, dtype=np.float32, count=-1).reshape([-1, num_features])[:, : num_features-1]
+            v_path, dtype=np.float32, count=-1)
+        annos = info['annos']
+
+        try:
+          points_v = points_v.reshape([-1, num_features])[:, : num_features-1]
+        except:
+          annos["num_points_in_gt"] = 0
+          print('warning:',v_path)
+          continue
+
         rect = info['calib/R0_rect']
         Trv2c = info['calib/Tr_velo_to_cam']
         P2 = info['calib/P2']
@@ -40,7 +49,7 @@ def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=
                                                         info["img_shape"])
 
         # points_v = points_v[points_v[:, 0] > 0]
-        annos = info['annos']
+
         num_obj = len([n for n in annos['name'] if n != 'DontCare'])
         # annos = kitti.filter_kitti_anno(annos, ['DontCare'])
         dims = annos['dimensions'][:num_obj]
@@ -201,16 +210,16 @@ def create_groundtruth_database(data_path,
                                 coors_range=None):
     root_path = pathlib.Path(data_path)
     if info_path is None:
-        info_path = root_path / 'kitti_infos_train.pkl'
+        info_path = root_path / 'level5_infos_train.pkl'
     if database_save_path is None:
         database_save_path = root_path / 'gt_database'
     else:
         database_save_path = pathlib.Path(database_save_path)
     if db_info_save_path is None:
-        db_info_save_path = root_path / "kitti_dbinfos_train.pkl"
+        db_info_save_path = root_path / "level5_dbinfos_train.pkl"
     database_save_path.mkdir(parents=True, exist_ok=True)
     with open(info_path, 'rb') as f:
-        kitti_infos = pickle.load(f)
+        level5_infos = pickle.load(f)
     all_db_infos = {}
     if used_classes is None:
         used_classes = list(kitti.get_classes())
@@ -218,7 +227,7 @@ def create_groundtruth_database(data_path,
     for name in used_classes:
         all_db_infos[name] = []
     group_counter = 0
-    for info in prog_bar(kitti_infos):
+    for info in prog_bar(level5_infos):
         velodyne_path = info['velodyne_path']
         if relative_path:
             # velodyne_path = str(root_path / velodyne_path) + "_reduced"
