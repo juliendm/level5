@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 
-import glob
+import os, glob
 import pickle
 
 from lyft_dataset_sdk.utils.data_classes import Box
@@ -127,8 +127,7 @@ def create_sample_data(level5_data,lyftdata,index,annotations=False):
             annos['dimensions'].append([box.wlh[1],box.wlh[2],box.wlh[0]])   #       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
             #annos['location'].append([-box.center[1],-box.center[2],box.center[0]])
             annos['location'].append([box.center[0],box.center[1],box.center[2]-box.wlh[2]/2.0])
-            #annos['rotation_y'].append(-box.orientation.yaw_pitch_roll[0]+np.pi/2.0)
-            annos['rotation_y'].append(box.orientation.radians+np.pi/2.0)
+            annos['rotation_y'].append(-box.orientation.yaw_pitch_roll[0]+np.pi/2.0)
             annos['truncated'].append(0.0)
             annos['occluded'].append(0)
             annos['bbox'].append([0,0,0,0])
@@ -286,6 +285,11 @@ def create_boxes(case):
     loc = case['location']
     dim = case['dimensions']
     yaw = case['rotation_y']
+    name = case['name']
+
+    return create_boxes_from_val(loc,dim,yaw,name,number)
+
+def create_boxes_from_val(loc,dim,yaw,name,number):
 
     boxes = []
 
@@ -299,30 +303,28 @@ def create_boxes(case):
           
                 Quaternion(scalar=np.cos((yaw[box_index]-np.pi/2.0)/2.0), vector=[0, 0, np.sin((yaw[box_index]-np.pi/2.0)/2.0)]).inverse,
           
-                name=name_map_reverse[case['name'][box_index]],
+                name=name_map_reverse[name[box_index]],
                 token="token",
             )
         boxes.append(box)
 
     return boxes
 
-
-def show_grounds(level5_infos,index):
+def show_grounds(level5_infos,lyftdata,index):
 
     points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
 
-
-
-
-
-    sample = lyftdata_train.get('sample', level5_infos[index]['level5_token'])
-    _, boxes, _ = lyftdata_train.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+    sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
+    _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
 
       
     loc = level5_infos[index]['annos']['location']
     dim = level5_infos[index]['annos']['dimensions']
     yaw = level5_infos[index]['annos']['rotation_y']
-
+    # yaw = []
+    # for box in boxes:
+    #   yaw.append(-box.orientation.yaw_pitch_roll[0]+np.pi/2.0)
+    
     names = level5_infos[index]['annos']['name']
 
     rect = level5_infos[index]['calib/R0_rect']
@@ -332,9 +334,10 @@ def show_grounds(level5_infos,index):
     num_obj = np.sum(annos["index"] >= 0)
     rbbox_cam = kitti.anno_to_rbboxes(annos)[:num_obj]
     rbbox_lidar = box_np_ops.box_camera_to_lidar(rbbox_cam, rect, Trv2c)
+    
     rbbox_corners = box_np_ops.center_to_corner_box3d(rbbox_lidar[:, :3], rbbox_lidar[:, 3:6], rbbox_lidar[:, 6], origin=[0.5, 0.5, 0], axis=2)
 
-
+    boxes_pred = create_boxes_from_val(loc, dim, yaw, names, len(loc))
 
     # Fig 1
 
@@ -347,19 +350,20 @@ def show_grounds(level5_infos,index):
     for box in boxes:
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
       ax.plot(points[0,:],points[1,:],'r')
+        
+    for box in boxes_pred:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[0,:],points[1,:],'b')
 
     for idx in range(len(rbbox_corners)):
-      ax.plot(rbbox_corners[idx,:,0],rbbox_corners[idx,:,1])
+      ax.plot(rbbox_corners[idx,:,0],rbbox_corners[idx,:,1],'g')
 
-    for index_obj in range(35):
-      obj = np.fromfile('/level5_data/gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+    for index_obj in range(len(boxes)):
+      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
       ax.scatter(obj[:, 0]+loc[index_obj, 0], obj[:, 1]+loc[index_obj, 1], s=0.1, c="red", cmap='grey')
 
-    ax.set_xlim(-30,30)
-    ax.set_ylim(-30,30)
-
-
-
+    ax.set_xlim(-100,100)
+    ax.set_ylim(-100,100)
 
     # Fig 2
 
@@ -374,16 +378,19 @@ def show_grounds(level5_infos,index):
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
       ax.plot(points[1,:],points[2,:],'r')
 
+    for box in boxes_pred:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[1,:],points[2,:],'b')
+        
     for idx in range(len(rbbox_corners)):
-      ax.plot(rbbox_corners[idx,:,1],rbbox_corners[idx,:,2])
+      ax.plot(rbbox_corners[idx,:,1],rbbox_corners[idx,:,2],'g')
 
-    for index_obj in range(35):
-      obj = np.fromfile('/level5_data/gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+    for index_obj in range(len(boxes)):
+      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
       ax.scatter(obj[:, 1]+loc[index_obj, 1], obj[:, 2]+loc[index_obj, 2], s=0.1, c="red", cmap='grey')
 
-    ax.set_xlim(-30,30)
-    ax.set_ylim(-5,5)
-
+    ax.set_xlim(-100,100)
+    ax.set_ylim(-8,6)
 
 def show_slice(data,res,index):
 
@@ -442,17 +449,17 @@ def show_slice(data,res,index):
     ax.set_ylim(-50,25)
 
 
-def average_size(level5_data_train):
+def average_size(level5_data,lyftdata):
 
     w = {"car":0,"truck":0,"bus":0,"pedestrian":0,"bicycle":0,"motorcycle":0,"other_vehicle":0,"emergency_vehicle":0,"animal":0}
     l = {"car":0,"truck":0,"bus":0,"pedestrian":0,"bicycle":0,"motorcycle":0,"other_vehicle":0,"emergency_vehicle":0,"animal":0}
     h = {"car":0,"truck":0,"bus":0,"pedestrian":0,"bicycle":0,"motorcycle":0,"other_vehicle":0,"emergency_vehicle":0,"animal":0}
     m = {"car":0,"truck":0,"bus":0,"pedestrian":0,"bicycle":0,"motorcycle":0,"other_vehicle":0,"emergency_vehicle":0,"animal":0}
 
-    for index in prog_bar(range(len(level5_data_train))):
-        token = level5_data_train.iloc[index]['Id']
-        sample = lyftdata_train.get('sample', token)
-        _, boxes, _ = lyftdata_train.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+    for index in prog_bar(range(len(level5_data))):
+        token = level5_data.iloc[index]['Id']
+        sample = lyftdata.get('sample', token)
+        _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
         for box in boxes:
           w[box.name] += box.wlh[0]
           l[box.name] += box.wlh[1]
@@ -464,14 +471,14 @@ def average_size(level5_data_train):
         print(key,"[%.2f,%.2f,%.2f]" % (w[key]/m[key],l[key]/m[key],h[key]/m[key]))
 
 
-def cloud_range(level5_data_train,lyftdata_train):
+def cloud_range(level5_data,lyftdata):
 
     cloud = []
 
-    for index in prog_bar(range(len(level5_data_train))):
-        token = level5_data_train.iloc[index]['Id']
-        sample = lyftdata_train.get('sample', token)
-        _, boxes, _ = lyftdata_train.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+    for index in prog_bar(range(len(level5_data))):
+        token = level5_data.iloc[index]['Id']
+        sample = lyftdata.get('sample', token)
+        _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
         for box in boxes:
           cloud.append(list(box.center))
           
@@ -489,5 +496,5 @@ def cloud_range(level5_data_train,lyftdata_train):
     ax.plot([-100,100],[-8,-8])
     plt.show()
 
-    
+
 
