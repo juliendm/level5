@@ -1,0 +1,101 @@
+[-69.12, -39.68, -5, 69.12, 39.68, 3]
+
+
+      anchor_generators: { # car
+         anchor_generator_stride: {
+           sizes: [1.93,4.76,1.72] # wlh
+           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-68.96, -39.52, -1.86] # origin_offset + strides / 2 # -1 - h/2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.5
+           unmatched_threshold : 0.35
+         }
+      }
+      anchor_generators: { # other_vehicle
+         anchor_generator_stride: {
+           sizes: [2.79,8.20,3.23] # wlh
+           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-68.96, -39.52, -2.615] # origin_offset + strides / 2 # -1 - h/2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.5
+           unmatched_threshold : 0.35
+         }
+      }
+      anchor_generators: { # pedestrian
+        anchor_generator_stride: {
+          sizes: [0.77,0.81,1.78] # wlh
+          strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+          offsets: [-68.96, -39.52, -1.49] # origin_offset + strides / 2 # -.6 - h/2
+          rotations: [0, 1.57] # 0, pi/2
+          matched_threshold : 0.5
+          unmatched_threshold : 0.35
+        }
+      }
+      anchor_generators: { # bicycle
+        anchor_generator_stride: {
+          sizes: [0.63,1.76,1.44] # wlh
+          strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+          offsets: [-68.96, -39.52, -1.32] # origin_offset + strides / 2 # -.6 -h/2
+          rotations: [0, 1.57] # 0, pi/2
+          matched_threshold : 0.5
+          unmatched_threshold : 0.35
+        }
+      }
+      anchor_generators: { # truck
+         anchor_generator_stride: {
+           sizes: [2.84,10.24,3.44] # wlh
+           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-68.96, -39.52, -2.72] # origin_offset + strides / 2 # -1 - h/2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.5
+           unmatched_threshold : 0.35
+         }
+      }
+      anchor_generators: { # bus
+         anchor_generator_stride: {
+           sizes: [2.96,12.34,3.44] # wlh
+           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-68.96, -39.52, -2.72] # origin_offset + strides / 2 # -1 - h/2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.5
+           unmatched_threshold : 0.35
+         }
+      }
+
+
+
+
+
+
+
+
+      anchor_generators: { # motorcycle
+        anchor_generator_stride: {
+          sizes: [0.96,2.35,1.59] # wlh
+          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
+          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2# -.6 -h/2
+          rotations: [0, 1.57] # 0, pi/2
+          matched_threshold : 0.5
+          unmatched_threshold : 0.35
+        }
+      }
+      anchor_generators: { # emergency_vehicle
+         anchor_generator_stride: {
+           sizes: [2.45,6.52,2.39] # wlh
+           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2 # -1 - h/2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.5
+           unmatched_threshold : 0.35
+         }
+      }
+      anchor_generators: { # animal
+        anchor_generator_stride: {
+          sizes: [0.36,0.73,0.51] # wlh
+          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
+          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2# -.6 -h/2
+          rotations: [0, 1.57] # 0, pi/2
+          matched_threshold : 0.5
+          unmatched_threshold : 0.35
+        }
+      }

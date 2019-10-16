@@ -174,8 +174,7 @@ def create_sample_data(level5_data,lyftdata,index,annotations=False):
 
     return sample_data
 
-      
-def lidar_to_world(box,lidar_top_token): # sample['data']['LIDAR_TOP']
+def lidar_to_world(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
     
     sd_record = lyftdata.get("sample_data", lidar_top_token)
     cs_record = lyftdata.get("calibrated_sensor", sd_record["calibrated_sensor_token"])
@@ -187,37 +186,84 @@ def lidar_to_world(box,lidar_top_token): # sample['data']['LIDAR_TOP']
     box.rotate(Quaternion(pose_record["rotation"]))
     box.translate(np.array(pose_record["translation"]))
 
-
-def pred_to_submission(data,res):
+def pred_to_submission(level5_infos,lyftdata,result):
   
     submission = {}
 
-    for index in prog_bar(range(len(data))):
+    for index in prog_bar(range(len(level5_infos))):
         
-        sample = lyftdata.get('sample', data[index]['level5_token'])
-        case = res[index]
+        sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
 
-        boxes = create_boxes(case)
+        boxes = create_boxes(result[index])
+        score = result[index]['score']
 
         world_boxes = []
         for box in boxes:
-            lidar_to_world(box,sample['data']['LIDAR_TOP'])
+            lidar_to_world(box,lyftdata,sample['data']['LIDAR_TOP'])
             world_boxes.append(box)
       
         pred_str = ''
         for box_index,box in enumerate(world_boxes):
             pred_str += '%f %f %f %f %f %f %f %f %s ' % (score[box_index],box.center[0],box.center[1],box.center[2],box.wlh[0],box.wlh[1],box.wlh[2],box.orientation.radians,box.name)
         
-        submission[data[index]['level5_token']] = pred_str
-      
-    df_submission = pd.DataFrame(submission.items(),columns=['Id','PredictionString'])
+        submission[level5_infos[index]['level5_token']] = pred_str
 
-    return df_submission
-  
+    return submission
 
-def show_scene(level5_infos,results,index):
 
-    points_v = np.fromfile('/level5_data/'+level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+def show_scene(level5_infos,lyftdata,result,index):
+
+
+    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+
+    sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
+    _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+
+    boxes_pred = create_boxes(result[index])
+
+    # Fig 1
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+    ax.set_facecolor('black')
+    ax.grid(False)
+
+    ax.scatter(points_v[:, 0], points_v[:, 1], s=0.1, c="white", cmap='grey')
+
+    for box in boxes:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[0,:],points[1,:],'r')
+        
+    for box in boxes_pred:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[0,:],points[1,:],'b')
+
+    ax.set_xlim(-100,100)
+    ax.set_ylim(-100,100)
+
+    # Fig 2
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 5))
+    ax.set_facecolor('black')
+    ax.grid(False)
+
+    filter_index = [value for value in np.where(points_v[:, 0]> -10)[0] if value in np.where(points_v[:, 0]< 100)[0]]  
+    ax.scatter(points_v[filter_index, 1], points_v[filter_index, 2], s=0.1, c="white", cmap='grey')
+
+    for box in boxes:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[1,:],points[2,:],'r')
+
+    for box in boxes_pred:
+      points = view_points(box.corners(), view=np.eye(3), normalize=False)
+      ax.plot(points[1,:],points[2,:],'b')
+        
+    ax.set_xlim(-100,100)
+    ax.set_ylim(-8,6)
+
+
+def show_scene_3d(level5_infos,lyftdata,result,index):
+
+    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
 
     df_tmp = pd.DataFrame(points_v[:, :3], columns=['x', 'y', 'z'])
     df_tmp['norm'] = np.sqrt(np.power(df_tmp[['x', 'y', 'z']].values, 2).sum(axis=1))
@@ -234,7 +280,7 @@ def show_scene(level5_infos,results,index):
     )
 
 
-    case = results[index]
+    case = result[index]
     boxes = create_boxes(case)
 
     x_lines = []
