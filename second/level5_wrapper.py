@@ -25,6 +25,12 @@ from second.core import box_np_ops
 from second.core.point_cloud.point_cloud_ops import bound_points_jit
 from second.data import kitti_common as kitti
 
+from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.spatial import Delaunay, Voronoi, voronoi_plot_2d
+from itertools import compress
+
+
 
 name_map = {
     "car"               : "car",
@@ -541,6 +547,81 @@ def cloud_range(level5_data,lyftdata):
     ax.plot([-100,100],[6,6])
     ax.plot([-100,100],[-8,-8])
     plt.show()
+
+
+def filter_points(velodyne_path)
+
+    points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
+
+    x_lidar = points_v[:, 0]
+    y_lidar = points_v[:, 1]
+    z_lidar = points_v[:, 2]
+
+    d_lidar = np.sqrt(x_lidar ** 2 + y_lidar ** 2)
+
+    x_img = np.zeros((len(points_v),2))
+    x_img[:,0] = np.arctan2(y_lidar, -x_lidar)
+    x_img[:,1] = np.arctan2(z_lidar, d_lidar)
+
+    # fig, ax = plt.subplots(figsize=(20, 10), dpi=100)
+    # ax.scatter(x_img[:,0],x_img[:,1], s=.5, c=d_lidar, linewidths=0, alpha=1, cmap="jet")
+    # ax.axis('scaled')
+    # fig.show()
+
+    tri = Delaunay(x_img)
+    #vor = Voronoi(x_img)
+
+    fil = [0]*len(points_v)
+    for simplice in tri.simplices:
+      
+        p1 = points_v[simplice[0]]
+        p2 = points_v[simplice[1]]
+        p3 = points_v[simplice[2]]
+        
+        U = p2-p1
+        V = p3-p1
+        
+        Nx = U[1]*V[2]-U[2]*V[1]
+        Ny = U[2]*V[0]-U[0]*V[2]
+        Nz = U[0]*V[1]-U[1]*V[0]
+        
+        sin_phi = Nz/np.sqrt(Nx**2+Ny**2+Nz**2)
+        phi = np.arcsin(sin_phi)
+        
+        a = np.sqrt((p1[0]-p2[0])**2+(p1[1]-p2[1])**2+(p1[2]-p2[2])**2)
+        b = np.sqrt((p1[0]-p3[0])**2+(p1[1]-p3[1])**2+(p1[2]-p3[2])**2)
+        c = np.sqrt((p2[0]-p3[0])**2+(p2[1]-p3[1])**2+(p2[2]-p3[2])**2)
+        
+        a1 = np.arccos((b**2+c**2-a**2)/(2*b*c))
+        a2 = np.arccos((a**2+c**2-b**2)/(2*a*c))
+        a3 = np.arccos((a**2+b**2-c**2)/(2*a*b))
+        
+        max_angle = np.max([a1,a2,a3])
+        min_angle = np.min([a1,a2,a3])
+        area = 0.5*a*b*np.sin(a3)
+        
+        skew = np.max([(max_angle-np.pi/3.0)/(np.pi-np.pi/3.0) , (np.pi/3.0-min_angle)/(np.pi/3.0)])
+        
+        if skew > 0.92 \
+        or (skew > 0.90 and abs(phi) > 80.0*np.pi/180.0) \
+        or (area < 0.002 and abs(phi) > 70.0*np.pi/180.0):
+          pass
+        else:
+          fil[simplice[0]] = 1
+          fil[simplice[1]] = 1
+          fil[simplice[2]] = 1
+        
+    points_v_filtered = np.array(list(compress(points_v, fil)))
+
+    save_filename = velodyne_path.split('/')
+    save_filename[-2] += "_reduced"
+    save_filename = '/'.join(save_filename)
+
+    print(save_filename)
+
+    with open(save_filename, 'w') as f:
+        points_v_filtered.tofile(f)
+
 
 
 
