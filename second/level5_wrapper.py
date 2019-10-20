@@ -30,6 +30,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import Delaunay, Voronoi, voronoi_plot_2d
 from itertools import compress
 
+import numba
 
 
 name_map = {
@@ -192,16 +193,15 @@ def lidar_to_world(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
     box.rotate(Quaternion(pose_record["rotation"]))
     box.translate(np.array(pose_record["translation"]))
 
-def pred_to_submission(level5_infos,lyftdata,result):
-  
-    submission = {}
+def pred_to_submission(submission,level5_infos,lyftdata,result):
 
     for index in prog_bar(range(len(level5_infos))):
         
         sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
-
-        boxes = create_boxes(result[index])
-        score = result[index]['score']
+        case = result[index]
+        
+        boxes = create_boxes(case)
+        score = case['score']
 
         world_boxes = []
         for box in boxes:
@@ -212,15 +212,21 @@ def pred_to_submission(level5_infos,lyftdata,result):
         for box_index,box in enumerate(world_boxes):
             pred_str += '%f %f %f %f %f %f %f %f %s ' % (score[box_index],box.center[0],box.center[1],box.center[2],box.wlh[0],box.wlh[1],box.wlh[2],box.orientation.radians,box.name)
         
-        submission[level5_infos[index]['level5_token']] = pred_str
-
-    return submission
+        key = level5_infos[index]['level5_token']
+        
+        if key in submission:
+            submission[key] += pred_str
+        else:
+            submission[key] = pred_str
 
 
 def show_scene(level5_infos,lyftdata,result,index):
 
+    v_filename = level5_infos[index]['velodyne_path'].split('/')
+    v_filename[-2] += "_reduced"
+    v_filename = '/'.join(v_filename)
 
-    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+    points_v = np.fromfile(v_filename, dtype=np.float32, count=-1).reshape([-1, 5])
 
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
@@ -549,78 +555,80 @@ def cloud_range(level5_data,lyftdata):
     plt.show()
 
 
-def filter_points(velodyne_path)
+def filter_points(velodyne_path):
 
     points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
+    
+    x_img = _project_points(points_v[:,:3])
+    tri = Delaunay(x_img)
+    angles, phi, area = _filter_points(points_v[:,:3],tri.simplices)
+    
+    max_angle = np.max(angles, axis=1)
+    min_angle = np.min(angles, axis=1)
+    skew = np.maximum((max_angle-np.pi/3.0)/(np.pi-np.pi/3.0) , (np.pi/3.0-min_angle)/(np.pi/3.0))
+    
+    filtered_simplices = tri.simplices[~((skew > 0.92) | ((skew > 0.90) & (abs(phi) > 80.0*np.pi/180.0)) | ((area < 0.002) & (abs(phi) > 70.0*np.pi/180.0)))]
+
+    fil = np.zeros((len(points_v),1),dtype=np.int32)
+    for index in range(3): fil[filtered_simplices[:,index]] = 1
+    
+    points_v_filtered = np.array(list(compress(points_v, fil)))
+
+    save_filename = velodyne_path.split('/')
+    save_filename[-2] += "_reduced_bis"
+    save_filename = '/'.join(save_filename)
+
+    with open(save_filename, 'w') as f:
+        points_v_filtered.tofile(f)
+
+@numba.jit(nopython=True)
+def _project_points(points_v):
 
     x_lidar = points_v[:, 0]
     y_lidar = points_v[:, 1]
     z_lidar = points_v[:, 2]
-
     d_lidar = np.sqrt(x_lidar ** 2 + y_lidar ** 2)
-
     x_img = np.zeros((len(points_v),2))
     x_img[:,0] = np.arctan2(y_lidar, -x_lidar)
     x_img[:,1] = np.arctan2(z_lidar, d_lidar)
 
-    # fig, ax = plt.subplots(figsize=(20, 10), dpi=100)
-    # ax.scatter(x_img[:,0],x_img[:,1], s=.5, c=d_lidar, linewidths=0, alpha=1, cmap="jet")
-    # ax.axis('scaled')
-    # fig.show()
+    return x_img
 
-    tri = Delaunay(x_img)
-    #vor = Voronoi(x_img)
+@numba.jit(nopython=True)
+def _filter_points(points_v,simplices):
 
-    fil = [0]*len(points_v)
-    for simplice in tri.simplices:
-      
-        p1 = points_v[simplice[0]]
-        p2 = points_v[simplice[1]]
-        p3 = points_v[simplice[2]]
-        
-        U = p2-p1
-        V = p3-p1
-        
-        Nx = U[1]*V[2]-U[2]*V[1]
-        Ny = U[2]*V[0]-U[0]*V[2]
-        Nz = U[0]*V[1]-U[1]*V[0]
-        
-        sin_phi = Nz/np.sqrt(Nx**2+Ny**2+Nz**2)
-        phi = np.arcsin(sin_phi)
-        
-        a = np.sqrt((p1[0]-p2[0])**2+(p1[1]-p2[1])**2+(p1[2]-p2[2])**2)
-        b = np.sqrt((p1[0]-p3[0])**2+(p1[1]-p3[1])**2+(p1[2]-p3[2])**2)
-        c = np.sqrt((p2[0]-p3[0])**2+(p2[1]-p3[1])**2+(p2[2]-p3[2])**2)
-        
-        a1 = np.arccos((b**2+c**2-a**2)/(2*b*c))
-        a2 = np.arccos((a**2+c**2-b**2)/(2*a*c))
-        a3 = np.arccos((a**2+b**2-c**2)/(2*a*b))
-        
-        max_angle = np.max([a1,a2,a3])
-        min_angle = np.min([a1,a2,a3])
-        area = 0.5*a*b*np.sin(a3)
-        
-        skew = np.max([(max_angle-np.pi/3.0)/(np.pi-np.pi/3.0) , (np.pi/3.0-min_angle)/(np.pi/3.0)])
-        
-        if skew > 0.92 \
-        or (skew > 0.90 and abs(phi) > 80.0*np.pi/180.0) \
-        or (area < 0.002 and abs(phi) > 70.0*np.pi/180.0):
-          pass
-        else:
-          fil[simplice[0]] = 1
-          fil[simplice[1]] = 1
-          fil[simplice[2]] = 1
-        
-    points_v_filtered = np.array(list(compress(points_v, fil)))
+    p1 = points_v[simplices[:,0]]
+    p2 = points_v[simplices[:,1]]
+    p3 = points_v[simplices[:,2]]
 
-    save_filename = velodyne_path.split('/')
-    save_filename[-2] += "_reduced"
-    save_filename = '/'.join(save_filename)
+    edges = np.zeros((len(simplices),3))
+    edges[:,0] = np.sqrt((p1[:,0]-p2[:,0])**2+(p1[:,1]-p2[:,1])**2+(p1[:,2]-p2[:,2])**2)
+    edges[:,1] = np.sqrt((p1[:,0]-p3[:,0])**2+(p1[:,1]-p3[:,1])**2+(p1[:,2]-p3[:,2])**2)
+    edges[:,2] = np.sqrt((p2[:,0]-p3[:,0])**2+(p2[:,1]-p3[:,1])**2+(p2[:,2]-p3[:,2])**2)
 
-    print(save_filename)
+    angles = np.zeros((len(simplices),3))
+    angles[:,0] = np.arccos((edges[:,1]**2+edges[:,2]**2-edges[:,0]**2)/(2*edges[:,1]*edges[:,2]))
+    angles[:,1] = np.arccos((edges[:,0]**2+edges[:,2]**2-edges[:,1]**2)/(2*edges[:,0]*edges[:,2]))
+    angles[:,2] = np.arccos((edges[:,0]**2+edges[:,1]**2-edges[:,2]**2)/(2*edges[:,0]*edges[:,1]))
 
-    with open(save_filename, 'w') as f:
-        points_v_filtered.tofile(f)
+    U = p2-p1
+    V = p3-p1
+    normals = np.zeros((len(simplices),3))
+    normals[:,0] = U[:,1]*V[:,2]-U[:,2]*V[:,1]
+    normals[:,1] = U[:,2]*V[:,0]-U[:,0]*V[:,2]
+    normals[:,2] = U[:,0]*V[:,1]-U[:,1]*V[:,0]
+
+    phi = np.arcsin(normals[:,2]/np.sqrt(normals[:,0]**2+normals[:,1]**2+normals[:,2]**2))
+
+    area = 0.5*edges[:,0]*edges[:,1]*np.sin(angles[:,2])
+    
+    return angles, phi, area
+    
+    
+
+
+
+
 
 
 
