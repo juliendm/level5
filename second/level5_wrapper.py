@@ -193,14 +193,14 @@ def lidar_to_world(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
     box.rotate(Quaternion(pose_record["rotation"]))
     box.translate(np.array(pose_record["translation"]))
 
-def pred_to_submission(submission,level5_infos,lyftdata,result):
+def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0):
 
     for index in prog_bar(range(len(level5_infos))):
         
         sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
         case = result[index]
         
-        boxes = create_boxes(case)
+        boxes = create_boxes(case,phi)
         score = case['score']
 
         world_boxes = []
@@ -335,7 +335,7 @@ def show_scene_3d(level5_infos,lyftdata,result,index):
     fig.update_layout(scene_aspectmode='data')
     fig.show()
 
-def create_boxes(case):
+def create_boxes(case,phi=0.0):
 
     score = case['score']
     number = len(np.where(score>0.5)[0])
@@ -345,21 +345,24 @@ def create_boxes(case):
     yaw = case['rotation_y']
     name = case['name']
 
-    return create_boxes_from_val(loc,dim,yaw,name,number)
+    return create_boxes_from_val(loc,dim,yaw,name,number,phi)
 
-def create_boxes_from_val(loc,dim,yaw,name,number):
+def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
     boxes = []
 
     for box_index in range(number):
 
+        x =  np.cos(phi)*loc[box_index][0] + np.sin(phi)*loc[box_index][1]
+        y = -np.sin(phi)*loc[box_index][0] + np.cos(phi)*loc[box_index][1]
+        angle = (yaw[box_index]+phi-np.pi/2.0)/2.0
+
         box = Box(
-                #[loc[box_index][2],-loc[box_index][0],-loc[box_index][1]+dim[box_index][1]/2.0],
-                [loc[box_index][0],loc[box_index][1],loc[box_index][2]+dim[box_index][1]/2.0],
+                [x,y,loc[box_index][2]+dim[box_index][1]/2.0],
 
                 [dim[box_index][2],dim[box_index][0],dim[box_index][1]], # dim == lhw; need wlh
           
-                Quaternion(scalar=np.cos((yaw[box_index]-np.pi/2.0)/2.0), vector=[0, 0, np.sin((yaw[box_index]-np.pi/2.0)/2.0)]).inverse,
+                Quaternion(scalar=np.cos(angle), vector=[0, 0, np.sin(angle)]).inverse,
           
                 name=name_map_reverse[name[box_index]],
                 token="token",
@@ -555,11 +558,20 @@ def cloud_range(level5_data,lyftdata):
     plt.show()
 
 
+def rotate(phi):
+
+    # x =  np.cos(phi)*x + np.sin(phi)*y
+    # y = -np.sin(phi)*x + np.cos(phi)*y
+
+    # angle += phi
+
+    return
+
 def filter_points(velodyne_path):
 
     points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
     
-    x_img = _project_points(points_v[:,:3])
+    x_img, d_lidar = _project_points(points_v[:,:3])
     tri = Delaunay(x_img)
     angles, phi, area = _filter_points(points_v[:,:3],tri.simplices)
     
@@ -567,11 +579,14 @@ def filter_points(velodyne_path):
     min_angle = np.min(angles, axis=1)
     skew = np.maximum((max_angle-np.pi/3.0)/(np.pi-np.pi/3.0) , (np.pi/3.0-min_angle)/(np.pi/3.0))
     
-    filtered_simplices = tri.simplices[~((skew > 0.92) | ((skew > 0.90) & (abs(phi) > 80.0*np.pi/180.0)) | ((area < 0.002) & (abs(phi) > 70.0*np.pi/180.0)))]
+    filtered_simplices = tri.simplices[~((skew > 0.92) | (abs(phi) > 70.0*np.pi/180.0) | ((area < 0.002) & (abs(phi) > 65.0*np.pi/180.0)))]
 
     fil = np.zeros((len(points_v),1),dtype=np.int32)
     for index in range(3): fil[filtered_simplices[:,index]] = 1
     
+    fil[(d_lidar<30.0) & (points_v[:,2]>-1.0)] = 1
+    fil[(points_v[:,2]>3)] = 0
+
     points_v_filtered = np.array(list(compress(points_v, fil)))
 
     save_filename = velodyne_path.split('/')
@@ -592,7 +607,7 @@ def _project_points(points_v):
     x_img[:,0] = np.arctan2(y_lidar, -x_lidar)
     x_img[:,1] = np.arctan2(z_lidar, d_lidar)
 
-    return x_img
+    return x_img, d_lidar
 
 @numba.jit(nopython=True)
 def _filter_points(points_v,simplices):
