@@ -19,7 +19,7 @@ from lyft_dataset_sdk.utils.data_classes import Box
 from lyft_dataset_sdk.lyftdataset import LyftDataset, LyftDatasetExplorer, Quaternion, view_points
 from lyft_dataset_sdk.utils.data_classes import LidarPointCloud
 
-import random
+import random, copy
 
 from second.core import box_np_ops
 from second.core.point_cloud.point_cloud_ops import bound_points_jit
@@ -62,7 +62,7 @@ name_map_reverse = {
 # print(cs_record)
 
 
-def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyftdata_test):
+def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyftdata_test, bounds=[0, -39.68, -5, 108.8, 39.68, 3]):
 
     level5_infos_train = []
     level5_infos_val = []
@@ -76,21 +76,26 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyf
     train_index = random_index[:sep]
     val_index = random_index[sep:]
 
+    phis = [0.0,90.0,180.0,270.0]
+
     for index in prog_bar(train_index):
-        sample_data = create_sample_data(level5_data_train,lyftdata_train,index,annotations=True)
-        level5_infos_train.append(sample_data)
+        for phi in phis:
+            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi,annotations=True)
+            level5_infos_train.append(sample_data)
 
     for index in prog_bar(val_index):
-        sample_data = create_sample_data(level5_data_train,lyftdata_train,index,annotations=True)
-        level5_infos_val.append(sample_data)
+        for phi in phis:
+            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi,annotations=True)
+            level5_infos_val.append(sample_data)
 
     for index in prog_bar(range(len(level5_data_test))):
-        sample_data = create_sample_data(level5_data_test,lyftdata_test,index,annotations=False)
-        level5_infos_test.append(sample_data)
+        for phi in phis:
+            sample_data = create_sample_data(level5_data_test,lyftdata_test,index,bounds,phi,annotations=False)
+            level5_infos_test.append(sample_data)
 
     return level5_infos_train, level5_infos_val, level5_infos_test
 
-def create_sample_data(level5_data,lyftdata,index,annotations=False):
+def create_sample_data(level5_data,lyftdata,index,bounds,phi=0.0,annotations=False):
 
     token = level5_data.iloc[index]['Id']
 
@@ -99,13 +104,30 @@ def create_sample_data(level5_data,lyftdata,index,annotations=False):
     sample_data = {}
     sample_data['image_idx'] = index
     sample_data['level5_token'] = token
+    sample_data['orientation'] = phi
     sample_data['pointcloud_num_features'] = 5
 
     sample_image = lyftdata.get('sample_data',sample['data']['CAM_FRONT'])
     sample_data['img_path'] = sample_image['filename']
 
     sample_lidar = lyftdata.get('sample_data',sample['data']['LIDAR_TOP'])
-    sample_data['velodyne_path'] = os.path.join(lyftdata.data_path,sample_lidar['filename'])
+
+    # Create New Name
+    velodyne_path = os.path.join(lyftdata.data_path,sample_lidar['filename'])
+    velodyne_path = velodyne_path.split('/')
+    #velodyne_path[-2] += "_reduced"
+    velodyne_path.insert(-1,velodyne_path[-1].split('_')[0])
+    velodyne_path.insert(-1,str(phi))
+    velodyne_path = '/'.join(velodyne_path)
+
+
+    sample_data['velodyne_path'] = velodyne_path
+
+    save_filename = velodyne_path.split('/')
+    save_filename[-2] += "_reduced"
+    save_filename = '/'.join(save_filename)
+
+    filter_points(velodyne_path,save_filename,bounds,phi)
 
     if annotations:
 
@@ -128,19 +150,20 @@ def create_sample_data(level5_data,lyftdata,index,annotations=False):
 
         for box in boxes:
 
-            # lidar_to_world(box,sample['data']['LIDAR_TOP'])
+            x =  np.cos(phi*np.pi/180.0)*box.center[0] + np.sin(phi*np.pi/180.0)*box.center[1]
+            y = -np.sin(phi*np.pi/180.0)*box.center[0] + np.cos(phi*np.pi/180.0)*box.center[1]
 
-            annos['name'].append(name_map[box.name])
-            annos['dimensions'].append([box.wlh[1],box.wlh[2],box.wlh[0]])   #       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
-            #annos['location'].append([-box.center[1],-box.center[2],box.center[0]])
-            annos['location'].append([box.center[0],box.center[1],box.center[2]-box.wlh[2]/2.0])
-            annos['rotation_y'].append(-box.orientation.yaw_pitch_roll[0]+np.pi/2.0)
-            annos['truncated'].append(0.0)
-            annos['occluded'].append(0)
-            annos['bbox'].append([0,0,0,0])
-            annos['score'].append(0)
-            annos['alpha'].append(0.0) # Does not seem to be used in training
-            annos['difficulty'].append(0) # done by add_difficulty_to_annos(sample_data)
+            if x,y in bounds:
+                annos['name'].append(name_map[box.name])
+                annos['dimensions'].append([box.wlh[1],box.wlh[2],box.wlh[0]])   #       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
+                annos['location'].append([x,y,box.center[2]-box.wlh[2]/2.0])
+                annos['rotation_y'].append(-box.orientation.yaw_pitch_roll[0]+phi*np.pi/180.0+np.pi/2.0)
+                annos['truncated'].append(0.0)
+                annos['occluded'].append(0)
+                annos['bbox'].append([0,0,0,0])
+                annos['score'].append(0)
+                annos['alpha'].append(0.0) # Does not seem to be used in training
+                annos['difficulty'].append(0) # done by add_difficulty_to_annos(sample_data)
 
         annos['name'] = np.array(annos['name'])
         annos['dimensions'] = np.array(annos['dimensions'])
@@ -353,9 +376,9 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
     for box_index in range(number):
 
-        x =  np.cos(phi)*loc[box_index][0] + np.sin(phi)*loc[box_index][1]
-        y = -np.sin(phi)*loc[box_index][0] + np.cos(phi)*loc[box_index][1]
-        angle = (yaw[box_index]+phi-np.pi/2.0)/2.0
+        x =  np.cos(phi*np.pi/180.0)*loc[box_index][0] + np.sin(phi*np.pi/180.0)*loc[box_index][1]
+        y = -np.sin(phi*np.pi/180.0)*loc[box_index][0] + np.cos(phi*np.pi/180.0)*loc[box_index][1]
+        angle = (yaw[box_index]+phi*np.pi/180.0-np.pi/2.0)/2.0
 
         box = Box(
                 [x,y,loc[box_index][2]+dim[box_index][1]/2.0],
@@ -567,31 +590,59 @@ def rotate(phi):
 
     return
 
-def filter_points(velodyne_path):
+
+# [0, -39.68, -5, 108.8, 39.68, 3]
+
+def filter_points(velodyne_path,save_filename,bounds,phi):
 
     points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
-    
+
     x_img, d_lidar = _project_points(points_v[:,:3])
     tri = Delaunay(x_img)
-    angles, phi, area = _filter_points(points_v[:,:3],tri.simplices)
+    angles, normal_phi, area = _filter_points(points_v[:,:3],tri.simplices)
     
     max_angle = np.max(angles, axis=1)
     min_angle = np.min(angles, axis=1)
     skew = np.maximum((max_angle-np.pi/3.0)/(np.pi-np.pi/3.0) , (np.pi/3.0-min_angle)/(np.pi/3.0))
     
-    filtered_simplices = tri.simplices[~((skew > 0.92) | (abs(phi) > 70.0*np.pi/180.0) | ((area < 0.002) & (abs(phi) > 65.0*np.pi/180.0)))]
+    filtered_simplices = tri.simplices[~((skew > 0.92) | (abs(normal_phi) > 70.0*np.pi/180.0) | ((area < 0.002) & (abs(normal_phi) > 65.0*np.pi/180.0)))]
 
-    fil = np.zeros((len(points_v),1),dtype=np.int32)
-    for index in range(3): fil[filtered_simplices[:,index]] = 1
+
+    mask = np.zeros((len(points_v),1),dtype=np.int32)
+    # mask = np.ones(depths.shape[0], dtype=bool)
+
+    for index in range(3): mask[filtered_simplices[:,index]] = 1
     
-    fil[(d_lidar<30.0) & (points_v[:,2]>-1.0)] = 1
-    fil[(points_v[:,2]>3)] = 0
+    mask[(d_lidar<30.0) & (points_v[:,2]>-1.0)] = 1
 
-    points_v_filtered = np.array(list(compress(points_v, fil)))
 
-    save_filename = velodyne_path.split('/')
-    save_filename[-2] += "_reduced_bis"
-    save_filename = '/'.join(save_filename)
+    x_saved = points_v[:,0]
+    y_saved = points_v[:,1]
+
+    points_v[:,0] =  np.cos(phi*np.pi/180.0)*x_saved + np.sin(phi*np.pi/180.0)*y_saved
+    points_v[:,1] = -np.sin(phi*np.pi/180.0)*x_saved + np.cos(phi*np.pi/180.0)*y_saved
+
+    mask[(points_v[:,0]<bounds[0])] = 0
+    mask[(points_v[:,0]>bounds[3])] = 0
+
+    mask[(points_v[:,1]<bounds[1])] = 0
+    mask[(points_v[:,1]>bounds[4])] = 0
+
+    mask[(points_v[:,2]<bounds[2])] = 0
+    mask[(points_v[:,2]>bounds[5])] = 0
+
+
+
+    # mask = np.logical_and(mask, depths > 0)
+    # mask = np.logical_and(mask, points[0, :] > 1)
+    # mask = np.logical_and(mask, points[0, :] < im.size[0] - 1)
+    # mask = np.logical_and(mask, points[1, :] > 1)
+    # mask = np.logical_and(mask, points[1, :] < im.size[1] - 1)
+
+
+
+    points_v_filtered = np.array(list(compress(points_v, mask)))
+    # points_v_filtered = points_v[mask]
 
     with open(save_filename, 'w') as f:
         points_v_filtered.tofile(f)
@@ -633,18 +684,85 @@ def _filter_points(points_v,simplices):
     normals[:,1] = U[:,2]*V[:,0]-U[:,0]*V[:,2]
     normals[:,2] = U[:,0]*V[:,1]-U[:,1]*V[:,0]
 
-    phi = np.arcsin(normals[:,2]/np.sqrt(normals[:,0]**2+normals[:,1]**2+normals[:,2]**2))
+    normal_phi = np.arcsin(normals[:,2]/np.sqrt(normals[:,0]**2+normals[:,1]**2+normals[:,2]**2))
 
     area = 0.5*edges[:,0]*edges[:,1]*np.sin(angles[:,2])
     
-    return angles, phi, area
+    return angles, normal_phi, area
     
+
+
+
+def reder_rgb_all(level5_data,lyftdata,index):
+
+    sample_token = level5_data.iloc[index]['Id']
+
+    pointsensor_channel = "LIDAR_TOP"
+    sample_record = lyftdata.get("sample", sample_token)
+    pointsensor_token = sample_record["data"][pointsensor_channel]
+    pointsensor = lyftdata.get("sample_data", pointsensor_token)
+    pcl_path = lyftdata.data_path / pointsensor["filename"]
+    pc = LidarPointCloud.from_file(pcl_path)
+    cs_record = lyftdata.get("calibrated_sensor", pointsensor["calibrated_sensor_token"])
+    pc.rotate(Quaternion(cs_record["rotation"]).rotation_matrix)
+    pc.translate(np.array(cs_record["translation"]))
+    poserecord = lyftdata.get("ego_pose", pointsensor["ego_pose_token"])
+    pc.rotate(Quaternion(poserecord["rotation"]).rotation_matrix)
+    pc.translate(np.array(poserecord["translation"]))
+
+    for camera_chanel in ["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_RIGHT","CAM_BACK","CAM_BACK_LEFT"]:
+        render_rgb_on_pointcloud(lyftdata, sample_token, copy.deepcopy(pc), dot_size = 15, camera_channel = camera_chanel)
+
+
+def render_rgb_on_pointcloud(lyftdata, sample_token, pc, dot_size = 2, camera_channel= "CAM_FRONT"):
+
+    sample_record = lyftdata.get("sample", sample_token)
+    camera_token = sample_record["data"][camera_channel]
+
+    points, mask, im = map_pointcloud_to_image(lyftdata, pc, camera_token)
+    points = points[:, mask]
+
+    colors = np.array(im)
     
+    # x = np.linspace(0, colors.shape[1]-1, colors.shape[1])
+    # y = np.linspace(0, colors.shape[0]-1, colors.shape[0])
+    # xv, yv = np.meshgrid(x, y)
+    
+    cloud_color = np.zeros((len(points[0, :]),3))
+    eccentricity = np.zeros(len(points[0, :]))
+    for index,(i,j) in enumerate(zip(np.round(points[1, :]), np.round(points[0, :]))):
+        index_i = int(i)
+        index_j = int(j)
+        cloud_color[index,:] = np.sum(colors[index_i-2:index_i+2+1,index_j-1:index_j+1+1,:],axis=(0,1))/(5*3)/255
+        eccentricity[index] = np.sqrt((index_i-colors.shape[0]/2.0)**2.0 + (index_j-colors.shape[1]/2.0)**2.0) 
 
+    plt.figure(figsize=(20, 10), dpi=100)
+    plt.scatter(np.round(points[0, :]), np.round(points[1, :]), c=cloud_color, s=dot_size)
+    plt.gca().invert_yaxis()
 
+def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
+    cam = lyftdata.get("sample_data", camera_token)
+    im = Image.open(str(lyftdata.data_path / cam["filename"]))
 
+    poserecord = lyftdata.get("ego_pose", cam["ego_pose_token"])
+    pc.translate(-np.array(poserecord["translation"]))
+    pc.rotate(Quaternion(poserecord["rotation"]).rotation_matrix.T)
+    cs_record = lyftdata.get("calibrated_sensor", cam["calibrated_sensor_token"])
+    pc.translate(-np.array(cs_record["translation"]))
+    pc.rotate(Quaternion(cs_record["rotation"]).rotation_matrix.T)
 
+    depths = pc.points[2, :]
+    points = view_points(pc.points[:3, :], np.array(cs_record["camera_intrinsic"]), normalize=True)
+
+    mask = np.ones(depths.shape[0], dtype=bool)
+    mask = np.logical_and(mask, depths > 0)
+    mask = np.logical_and(mask, points[0, :] > 1)
+    mask = np.logical_and(mask, points[0, :] < im.size[0] - 1)
+    mask = np.logical_and(mask, points[1, :] > 1)
+    mask = np.logical_and(mask, points[1, :] < im.size[1] - 1)
+
+    return points, mask, im
 
 
 
