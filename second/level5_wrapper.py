@@ -62,7 +62,7 @@ name_map_reverse = {
 # print(cs_record)
 
 
-def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyftdata_test, bounds=[0, -39.68, -5, 108.8, 39.68, 3]):
+def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyftdata_test, bounds=[-500.0, -500.0, -5, 500.0, 500.0, 3]):
 
     level5_infos_train = []
     level5_infos_val = []
@@ -76,7 +76,7 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyf
     train_index = random_index[:sep]
     val_index = random_index[sep:]
 
-    phis = [0.0,90.0,180.0,270.0]
+    phis = [0.0] #[0.0,90.0,180.0,270.0]
 
     for index in prog_bar(train_index):
         for phi in phis:
@@ -114,20 +114,20 @@ def create_sample_data(level5_data,lyftdata,index,bounds,phi=0.0,annotations=Fal
 
     # Create New Name
     velodyne_path = os.path.join(lyftdata.data_path,sample_lidar['filename'])
-    velodyne_path = velodyne_path.split('/')
-    #velodyne_path[-2] += "_reduced"
-    velodyne_path.insert(-1,velodyne_path[-1].split('_')[0])
-    velodyne_path.insert(-1,str(phi))
-    velodyne_path = '/'.join(velodyne_path)
+    # velodyne_path = velodyne_path.split('/')
+    # #velodyne_path[-2] += "_reduced"
+    # velodyne_path.insert(-1,velodyne_path[-1].split('_')[0])
+    # velodyne_path.insert(-1,str(phi))
+    # velodyne_path = '/'.join(velodyne_path)
 
 
     sample_data['velodyne_path'] = velodyne_path
 
-    save_filename = velodyne_path.split('/')
-    save_filename[-2] += "_reduced"
-    save_filename = '/'.join(save_filename)
+    # save_filename = velodyne_path.split('/')
+    # save_filename[-2] += "_reduced"
+    # save_filename = '/'.join(save_filename)
 
-    filter_points(velodyne_path,save_filename,bounds,phi)
+    # filter_points(velodyne_path,save_filename,bounds,phi)
 
     if annotations:
 
@@ -153,7 +153,7 @@ def create_sample_data(level5_data,lyftdata,index,bounds,phi=0.0,annotations=Fal
             x =  np.cos(phi*np.pi/180.0)*box.center[0] + np.sin(phi*np.pi/180.0)*box.center[1]
             y = -np.sin(phi*np.pi/180.0)*box.center[0] + np.cos(phi*np.pi/180.0)*box.center[1]
 
-            if x,y in bounds:
+            if x >= bounds[0] and y >= bounds[1] and x <= bounds[3] and y <= bounds[4]:
                 annos['name'].append(name_map[box.name])
                 annos['dimensions'].append([box.wlh[1],box.wlh[2],box.wlh[0]])   #       # l, h, w --> w, l, h   # Check that kitty_info_val.pkl has l, h, w
                 annos['location'].append([x,y,box.center[2]-box.wlh[2]/2.0])
@@ -243,7 +243,7 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0):
             submission[key] = pred_str
 
 
-def show_scene(level5_infos,lyftdata,result,index):
+def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
 
     v_filename = level5_infos[index]['velodyne_path'].split('/')
     v_filename[-2] += "_reduced"
@@ -254,7 +254,7 @@ def show_scene(level5_infos,lyftdata,result,index):
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
 
-    boxes_pred = create_boxes(result[index])
+    boxes_pred = create_boxes(result[index],phi)
 
     # Fig 1
 
@@ -593,9 +593,9 @@ def rotate(phi):
 
 # [0, -39.68, -5, 108.8, 39.68, 3]
 
-def filter_points(velodyne_path,save_filename,bounds,phi):
+def filter_points(points_v,save_filename='',bounds=[-500.0, -500.0, -5.0, 500.0, 500.0, 3.0],phi=0.0):
 
-    points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
+    #points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
 
     x_img, d_lidar = _project_points(points_v[:,:3])
     tri = Delaunay(x_img)
@@ -644,8 +644,10 @@ def filter_points(velodyne_path,save_filename,bounds,phi):
     points_v_filtered = np.array(list(compress(points_v, mask)))
     # points_v_filtered = points_v[mask]
 
-    with open(save_filename, 'w') as f:
-        points_v_filtered.tofile(f)
+    return points_v_filtered
+
+    # with open(save_filename, 'w') as f:
+    #     points_v_filtered.tofile(f)
 
 @numba.jit(nopython=True)
 def _project_points(points_v):
@@ -693,7 +695,7 @@ def _filter_points(points_v,simplices):
 
 
 
-def reder_rgb_all(level5_data,lyftdata,index):
+def reder_rgb_all(level5_data,lyftdata,index,filter_v=False):
 
     sample_token = level5_data.iloc[index]['Id']
 
@@ -702,17 +704,44 @@ def reder_rgb_all(level5_data,lyftdata,index):
     pointsensor_token = sample_record["data"][pointsensor_channel]
     pointsensor = lyftdata.get("sample_data", pointsensor_token)
     pcl_path = lyftdata.data_path / pointsensor["filename"]
-    pc = LidarPointCloud.from_file(pcl_path)
+
+    point_v = np.fromfile(str(pcl_path), dtype=np.float32).reshape((-1, 5))[:,:LidarPointCloud.nbr_dims()]
+    
+    if filter_v:
+        point_v = filter_points(point_v)
+
+    pc = LidarPointCloud(point_v.copy().T)
+    #pc = LidarPointCloud.from_file(pcl_path)
+
     cs_record = lyftdata.get("calibrated_sensor", pointsensor["calibrated_sensor_token"])
     pc.rotate(Quaternion(cs_record["rotation"]).rotation_matrix)
     pc.translate(np.array(cs_record["translation"]))
     poserecord = lyftdata.get("ego_pose", pointsensor["ego_pose_token"])
     pc.rotate(Quaternion(poserecord["rotation"]).rotation_matrix)
     pc.translate(np.array(poserecord["translation"]))
-
+    
+    point_v = np.lib.pad(point_v[:,:3],((0,0),(0,3)),'constant',constant_values=(0))  
+    count = np.zeros((len(point_v),1))
     for camera_chanel in ["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_RIGHT","CAM_BACK","CAM_BACK_LEFT"]:
-        render_rgb_on_pointcloud(lyftdata, sample_token, copy.deepcopy(pc), dot_size = 15, camera_channel = camera_chanel)
+        mask, cloud_color, eccentricity = render_rgb_on_pointcloud(lyftdata, sample_token, copy.deepcopy(pc), dot_size = 15, camera_channel = camera_chanel)
+        point_v[mask,3:6] += cloud_color
+        count[mask] += 1.0
+    point_v[:,3:6] /= np.clip(count,1.0,max(count))
 
+    # Show
+
+    x_lidar = point_v[:, 0]
+    y_lidar = point_v[:, 1]
+    z_lidar = point_v[:, 2]
+    d_lidar = np.sqrt(x_lidar ** 2 + y_lidar ** 2)
+    x_img = np.zeros((len(point_v),2))
+    x_img[:,0] = np.arctan2(y_lidar, -x_lidar)
+    x_img[:,1] = np.arctan2(z_lidar, d_lidar)
+    fig, ax = plt.subplots(figsize=(20, 10), dpi=100)
+    ax.scatter(x_img[:,0],x_img[:,1], s=1.0, c=point_v[:,3:6])
+    ax.axis('scaled')
+    fig.show()
+    
 
 def render_rgb_on_pointcloud(lyftdata, sample_token, pc, dot_size = 2, camera_channel= "CAM_FRONT"):
 
@@ -721,24 +750,21 @@ def render_rgb_on_pointcloud(lyftdata, sample_token, pc, dot_size = 2, camera_ch
 
     points, mask, im = map_pointcloud_to_image(lyftdata, pc, camera_token)
     points = points[:, mask]
-
     colors = np.array(im)
     
-    # x = np.linspace(0, colors.shape[1]-1, colors.shape[1])
-    # y = np.linspace(0, colors.shape[0]-1, colors.shape[0])
-    # xv, yv = np.meshgrid(x, y)
-    
-    cloud_color = np.zeros((len(points[0, :]),3))
-    eccentricity = np.zeros(len(points[0, :]))
-    for index,(i,j) in enumerate(zip(np.round(points[1, :]), np.round(points[0, :]))):
-        index_i = int(i)
-        index_j = int(j)
-        cloud_color[index,:] = np.sum(colors[index_i-2:index_i+2+1,index_j-1:index_j+1+1,:],axis=(0,1))/(5*3)/255
-        eccentricity[index] = np.sqrt((index_i-colors.shape[0]/2.0)**2.0 + (index_j-colors.shape[1]/2.0)**2.0) 
+    cloud_color, eccentricity = _render_rgb_on_pointcloud(np.array(np.round(points[0:2, :]),dtype=np.int32),colors)
 
-    plt.figure(figsize=(20, 10), dpi=100)
-    plt.scatter(np.round(points[0, :]), np.round(points[1, :]), c=cloud_color, s=dot_size)
-    plt.gca().invert_yaxis()
+    return mask, cloud_color, eccentricity 
+
+@numba.jit(nopython=True)
+def _render_rgb_on_pointcloud(indices,colors):
+
+    cloud_color = np.zeros((len(indices[0, :]),3))    
+    for index in range(len(indices[0, :])):
+        cloud_color[index,:] = np.sum(np.sum(colors[indices[1,index]-2:indices[1,index]+2+1,indices[0,index]-1:indices[0,index]+1+1,:],axis=0),axis=0)/(5*3)/255
+    eccentricity = np.sqrt((indices[1,:]-colors.shape[0]/2.0)**2.0 + (indices[0,:]-colors.shape[1]/2.0)**2.0) 
+
+    return cloud_color, eccentricity
 
 def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
