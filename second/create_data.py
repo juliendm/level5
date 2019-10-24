@@ -24,7 +24,7 @@ def _read_imageset_file(path):
     return [int(line) for line in lines]
 
 
-def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=True, num_features=4):
+def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=True, num_features=6):
     for info in prog_bar(infos):
         if relative_path:
             v_path = str(pathlib.Path(data_path) / info["velodyne_path"])
@@ -35,7 +35,7 @@ def _calculate_num_points_in_gt(data_path, infos, relative_path, remove_outside=
         annos = info['annos']
 
         try:
-          points_v = points_v.reshape([-1, num_features])[:, : num_features-1]
+          points_v = points_v.reshape([-1, num_features])
         except:
           annos["num_points_in_gt"] = 0
           print('warning:',v_path)
@@ -148,7 +148,7 @@ def _create_reduced_point_cloud(data_path,
         v_path = info['velodyne_path']
         v_path = pathlib.Path(data_path) / v_path
         points_v = np.fromfile(
-            str(v_path), dtype=np.float32, count=-1).reshape([-1, 4])
+            str(v_path), dtype=np.float32, count=-1).reshape([-1, 6])
         rect = info['calib/R0_rect']
         P2 = info['calib/P2']
         Trv2c = info['calib/Tr_velo_to_cam']
@@ -232,11 +232,11 @@ def create_groundtruth_database(data_path,
         if relative_path:
             # velodyne_path = str(root_path / velodyne_path) + "_reduced"
             velodyne_path = str(root_path / velodyne_path)
-        num_features = 4
+        num_features = 6
         if 'pointcloud_num_features' in info:
             num_features = info['pointcloud_num_features']
         points = np.fromfile(
-            velodyne_path, dtype=np.float32, count=-1).reshape([-1, num_features])[:, : num_features-1]
+            velodyne_path, dtype=np.float32, count=-1).reshape([-1, num_features])
 
         image_idx = info["image_idx"]
         rect = info['calib/R0_rect']

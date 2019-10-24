@@ -1,11 +1,11 @@
 model: {
   second: {
     voxel_generator {
-      point_cloud_range : [-112.0, -71.68, -5, 112.0, 71.68, 3]
-      voxel_size : [0.28, 0.28, 8]   # 1375 x 1375 x 1
+      point_cloud_range : [-96.0, -48.0, -5, 96.0, 48.0, 3]
+      voxel_size : [0.2, 0.2, 8]   # 1000 x 500 x 1
       max_number_of_points_per_voxel : 100
     }
-    num_class: 9
+    num_class: 4
     voxel_feature_extractor: {
       module_class_name: "PillarFeatureNet"
       num_filters: [64]
@@ -55,7 +55,7 @@ model: {
 
     loss_norm_type: NormByNumPositives
     # Postprocess
-    post_center_limit_range: [-112.0, -71.68, -5, 112.0, 71.68, 3]
+    post_center_limit_range: [-96.0, -48.0, -8, 96.0, 48.0, 6]
     use_rotate_nms: false
     use_multi_class_nms: false
     nms_pre_max_size: 1000
@@ -64,7 +64,7 @@ model: {
     nms_iou_threshold: 0.5
 
     use_bev: false
-    num_point_features: 4
+    num_point_features: 6
     without_reflectivity: false
     box_coder: {
       ground_box3d_coder: {
@@ -77,92 +77,42 @@ model: {
       anchor_generators: { # car
          anchor_generator_stride: {
            sizes: [1.93,4.76,1.72] # wlh
-           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
-           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2
+           strides: [0.4, 0.4, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-95.8, -47.8, -1.78] # origin_offset + strides / 2
            rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.5
-           unmatched_threshold : 0.35
+           matched_threshold : 0.6
+           unmatched_threshold : 0.45
+         }
+      }
+      anchor_generators: { # other_vehicle
+         anchor_generator_stride: {
+           sizes: [2.79,8.20,3.23] # wlh
+           strides: [0.4, 0.4, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-95.8, -47.8, -1.78] # origin_offset + strides / 2
+           rotations: [0, 1.57] # 0, pi/2
+           matched_threshold : 0.6
+           unmatched_threshold : 0.45
          }
       }
       anchor_generators: { # truck
          anchor_generator_stride: {
            sizes: [2.84,10.24,3.44] # wlh
-           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
-           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2
+           strides: [0.4, 0.4, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-95.8, -47.8, -1.78] # origin_offset + strides / 2
            rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.5
-           unmatched_threshold : 0.35
+           matched_threshold : 0.6
+           unmatched_threshold : 0.45
          }
       }
       anchor_generators: { # bus
          anchor_generator_stride: {
            sizes: [2.96,12.34,3.44] # wlh
-           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
-           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2
+           strides: [0.4, 0.4, 0.0] # if generate only 1 z_center, z_stride will be ignored
+           offsets: [-95.8, -47.8, -1.78] # origin_offset + strides / 2
            rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.5
-           unmatched_threshold : 0.35
+           matched_threshold : 0.6
+           unmatched_threshold : 0.45
          }
-      }
-      anchor_generators: { # pedestrian
-        anchor_generator_stride: {
-          sizes: [0.77,0.81,1.78] # wlh
-          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2
-          rotations: [0, 1.57] # 0, pi/2
-          matched_threshold : 0.5
-          unmatched_threshold : 0.35
-        }
-      }
-      anchor_generators: { # bicycle
-        anchor_generator_stride: {
-          sizes: [0.63,1.76,1.44] # wlh
-          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2
-          rotations: [0, 1.57] # 0, pi/2
-          matched_threshold : 0.5
-          unmatched_threshold : 0.35
-        }
-      }
-      anchor_generators: { # motorcycle
-        anchor_generator_stride: {
-          sizes: [0.96,2.35,1.59] # wlh
-          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2
-          rotations: [0, 1.57] # 0, pi/2
-          matched_threshold : 0.5
-          unmatched_threshold : 0.35
-        }
-      }
-      anchor_generators: { # other_vehicle
-         anchor_generator_stride: {
-           sizes: [2.79,8.20,3.23] # wlh
-           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
-           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2
-           rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.5
-           unmatched_threshold : 0.35
-         }
-      }
-      anchor_generators: { # emergency_vehicle
-         anchor_generator_stride: {
-           sizes: [2.45,6.52,2.39] # wlh
-           strides: [0.32, 0.32, 0.0] # if generate only 1 z_center, z_stride will be ignored
-           offsets: [0.16, -39.52, -1.78] # origin_offset + strides / 2
-           rotations: [0, 1.57] # 0, pi/2
-           matched_threshold : 0.5
-           unmatched_threshold : 0.35
-         }
-      }
-      anchor_generators: { # animal
-        anchor_generator_stride: {
-          sizes: [0.36,0.73,0.51] # wlh
-          strides: [0.16, 0.16, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [0.08, -19.76, -1.465] # origin_offset + strides / 2
-          rotations: [0, 1.57] # 0, pi/2
-          matched_threshold : 0.5
-          unmatched_threshold : 0.35
-        }
       }
 
       sample_positive_fraction : -1
@@ -178,38 +128,24 @@ model: {
 
 train_input_reader: {
   record_file_path: "/floyd/home/level5_data/level5_train.tfrecord"
-  class_names: ["car","truck","bus","pedestrian","bicycle","motorcycle","other_vehicle","emergency_vehicle","animal"]
+  class_names: ["car", "other_vehicle", "truck", "bus"]
   max_num_epochs : 160
-  batch_size: 3
+  batch_size: 2
   prefetch_size : 25
   max_number_of_voxels: 12000
   shuffle_points: true
-  num_workers: 3
+  num_workers: 2
   groundtruth_localization_noise_std: [0.25, 0.25, 0.25]
   groundtruth_rotation_uniform_noise: [-0.15707963267, 0.15707963267]
   global_rotation_uniform_noise: [-0.78539816, 0.78539816]
   global_scaling_uniform_noise: [0.95, 1.05]
   global_random_rotation_range_per_object: [0, 0]
-  anchor_area_threshold: 3
+  anchor_area_threshold: 1
   remove_points_after_sample: false
   groundtruth_points_drop_percentage: 0.0
   groundtruth_drop_max_keep_points: 15
   database_sampler {
     database_info_path: "/floyd/home/level5_data/level5_dbinfos_train.pkl"
-    sample_groups {
-      name_to_max_num {
-        key: "car"
-        value: 15
-      }
-    }
-    database_prep_steps {
-      filter_by_min_num_points {
-        min_num_point_pairs {
-          key: "car"
-          value: 5
-        }
-      }
-    }
     database_prep_steps {
       filter_by_difficulty {
         removed_difficulties: [-1]
@@ -254,14 +190,14 @@ train_config: {
 
 eval_input_reader: {
   record_file_path: "/floyd/home/level5_data/level5_val.tfrecord"
-  class_names: ["car","truck","bus","pedestrian","bicycle","motorcycle","other_vehicle","emergency_vehicle","animal"]
-  batch_size: 2
+  class_names: ["car", "other_vehicle", "truck", "bus"]
+  batch_size: 3
   max_num_epochs : 160
   prefetch_size : 25
   max_number_of_voxels: 12000
   shuffle_points: false
   num_workers: 3
-  anchor_area_threshold: 3
+  anchor_area_threshold: 1
   remove_environment: false
   kitti_info_path: "/floyd/home/level5_data/level5_infos_val.pkl"
   kitti_root_path: "/floyd/home/level5_data"

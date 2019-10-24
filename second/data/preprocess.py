@@ -63,7 +63,7 @@ def prep_pointcloud(input_dict,
                     global_random_rot_range=[0.78, 2.35],
                     generate_bev=False,
                     without_reflectivity=False,
-                    num_point_features=4,
+                    num_point_features=6,
                     anchor_area_threshold=1,
                     gt_points_drop=0.0,
                     gt_drop_max_keep=10,
@@ -313,17 +313,14 @@ def _read_and_prep_v9(info, root_path, num_point_features, prep_func):
         v_path.parent.stem + "_reduced") / v_path.name
 
 
-    # points = np.fromfile(
-    #     str(v_path), dtype=np.float32,
-    #     count=-1).reshape([-1, num_point_features])
-
-
     points = np.fromfile(
         str(v_path), dtype=np.float32,
-        count=-1).reshape((-1, 5))[:, : 4]
-    
+        count=-1).reshape([-1, num_point_features])
 
-    
+    # points = np.fromfile(
+    #     str(v_path), dtype=np.float32,
+    #     count=-1).reshape((-1, 6))[:, : num_point_features]
+        
 #     points = np.fromfile(
 #         str(v_path), dtype=np.float32,
 #         count=-1).reshape((-1, 4))

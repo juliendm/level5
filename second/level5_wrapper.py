@@ -1,6 +1,12 @@
 
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+try:
+    import plotly.graph_objects as go
+except:
+    pass
+
 import matplotlib.image as mpimg
 import tqdm
 from tqdm import tqdm as prog_bar
@@ -9,10 +15,9 @@ from skimage import io
 from PIL import Image
 
 import pandas as pd
-import plotly.graph_objects as go
 import numpy as np
 
-import os, glob
+import os, sys, glob
 import pickle
 
 from lyft_dataset_sdk.utils.data_classes import Box
@@ -32,6 +37,16 @@ from itertools import compress
 
 import numba
 
+
+#sys.path.append('/content/AB3DMOT/')
+
+try:
+    from main import AB3DMOT
+except:
+    pass
+
+det_id2str = {1:'car', 2:'other_vehicle', 3:'pedestrian', 4:'bicycle', 5:'bus', 6:'truck', 7:'motorcycle', 8:'emergency_vehicle', 9:'animal'}
+det_str2id = {'car':1, 'other_vehicle':2, 'pedestrian':3, 'bicycle':4, 'bus':5, 'truck':6, 'motorcycle':7, 'emergency_vehicle':8, 'animal':9}
 
 name_map = {
     "car"               : "car",
@@ -80,17 +95,17 @@ def create_level5_infos(level5_data_train, level5_data_test, lyftdata_train, lyf
 
     for index in prog_bar(train_index):
         for phi in phis:
-            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi,annotations=True)
+            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi=phi,annotations=True)
             level5_infos_train.append(sample_data)
 
     for index in prog_bar(val_index):
         for phi in phis:
-            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi,annotations=True)
+            sample_data = create_sample_data(level5_data_train,lyftdata_train,index,bounds,phi=phi,annotations=True)
             level5_infos_val.append(sample_data)
 
     for index in prog_bar(range(len(level5_data_test))):
         for phi in phis:
-            sample_data = create_sample_data(level5_data_test,lyftdata_test,index,bounds,phi,annotations=False)
+            sample_data = create_sample_data(level5_data_test,lyftdata_test,index,bounds,phi=phi,annotations=False)
             level5_infos_test.append(sample_data)
 
     return level5_infos_train, level5_infos_val, level5_infos_test
@@ -105,7 +120,7 @@ def create_sample_data(level5_data,lyftdata,index,bounds,phi=0.0,annotations=Fal
     sample_data['image_idx'] = index
     sample_data['level5_token'] = token
     sample_data['orientation'] = phi
-    sample_data['pointcloud_num_features'] = 5
+    sample_data['pointcloud_num_features'] = 6
 
     sample_image = lyftdata.get('sample_data',sample['data']['CAM_FRONT'])
     sample_data['img_path'] = sample_image['filename']
@@ -249,7 +264,7 @@ def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
     v_filename[-2] += "_reduced"
     v_filename = '/'.join(v_filename)
 
-    points_v = np.fromfile(v_filename, dtype=np.float32, count=-1).reshape([-1, 5])
+    points_v = np.fromfile(v_filename, dtype=np.float32, count=-1).reshape([-1, 6])
 
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
@@ -259,10 +274,8 @@ def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
     # Fig 1
 
     fig, ax = plt.subplots(1, 1, figsize=(15, 15))
-    ax.set_facecolor('black')
-    ax.grid(False)
 
-    ax.scatter(points_v[:, 0], points_v[:, 1], s=0.1, c="white", cmap='grey')
+    ax.scatter(points_v[:, 0], points_v[:, 1], s=5.0, c=points_v[:,3:6])
 
     for box in boxes:
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
@@ -272,17 +285,18 @@ def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
       ax.plot(points[0,:],points[1,:],'b')
 
+    ax.grid(False)
     ax.set_xlim(-100,100)
     ax.set_ylim(-100,100)
 
     # Fig 2
 
-    fig, ax = plt.subplots(1, 1, figsize=(15, 5))
-    ax.set_facecolor('black')
-    ax.grid(False)
+    fig, ax = plt.subplots(1, 1, figsize=(15, 2))
 
-    filter_index = [value for value in np.where(points_v[:, 0]> -10)[0] if value in np.where(points_v[:, 0]< 100)[0]]  
-    ax.scatter(points_v[filter_index, 1], points_v[filter_index, 2], s=0.1, c="white", cmap='grey')
+    mask = np.ones(points_v.shape[0], dtype=bool)
+    mask = np.logical_and(mask, points_v[:, 0] > -10)
+    mask = np.logical_and(mask, points_v[:, 0] < 100)
+    ax.scatter(points_v[mask, 1], points_v[mask, 2], s=5.0, c=points_v[mask,3:6])
 
     for box in boxes:
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
@@ -292,16 +306,17 @@ def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
       points = view_points(box.corners(), view=np.eye(3), normalize=False)
       ax.plot(points[1,:],points[2,:],'b')
         
-    ax.set_xlim(-100,100)
-    ax.set_ylim(-8,6)
+    ax.grid(False)
+    ax.set_xlim(-15,15)
+    ax.set_ylim(-3,1)
 
 
 def show_scene_3d(level5_infos,lyftdata,result,index):
 
-    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 6])
 
-    df_tmp = pd.DataFrame(points_v[:, :3], columns=['x', 'y', 'z'])
-    df_tmp['norm'] = np.sqrt(np.power(df_tmp[['x', 'y', 'z']].values, 2).sum(axis=1))
+    df_tmp = pd.DataFrame(points_v[:, :6], columns=['x', 'y', 'z', 'r', 'g', 'b'])
+    # df_tmp['norm'] = np.sqrt(np.power(df_tmp[['x', 'y', 'z']].values, 2).sum(axis=1))
     scatter = go.Scatter3d(
         x=df_tmp['x'],
         y=df_tmp['y'],
@@ -309,11 +324,10 @@ def show_scene_3d(level5_infos,lyftdata,result,index):
         mode='markers',
         marker=dict(
             size=1,
-            color=df_tmp['norm'],
+            color=df_tmp[['r', 'g', 'b']].values, # df_tmp['norm'],
             opacity=0.8
         )
     )
-
 
     case = result[index]
     boxes = create_boxes(case)
@@ -368,7 +382,7 @@ def create_boxes(case,phi=0.0):
     yaw = case['rotation_y']
     name = case['name']
 
-    return create_boxes_from_val(loc,dim,yaw,name,number,phi)
+    return create_boxes_from_val(loc,dim,yaw,name,number,phi=phi)
 
 def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
@@ -396,7 +410,7 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
 def show_grounds(level5_infos,lyftdata,index):
 
-    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 6])
 
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
@@ -443,7 +457,7 @@ def show_grounds(level5_infos,lyftdata,index):
       ax.plot(rbbox_corners[idx,:,0],rbbox_corners[idx,:,1],'g')
 
     for index_obj in range(len(boxes)):
-      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 6])
       ax.scatter(obj[:, 0]+loc[index_obj, 0], obj[:, 1]+loc[index_obj, 1], s=0.1, c="red", cmap='grey')
 
     ax.set_xlim(-100,100)
@@ -470,7 +484,7 @@ def show_grounds(level5_infos,lyftdata,index):
       ax.plot(rbbox_corners[idx,:,1],rbbox_corners[idx,:,2],'g')
 
     for index_obj in range(len(boxes)):
-      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 4])
+      obj = np.fromfile(str(lyftdata.data_path) + '/../gt_database/'+str(level5_infos[index]['image_idx'])+'_'+names[index_obj]+'_'+str(index_obj)+'.bin', dtype=np.float32, count=-1).reshape([-1, 6])
       ax.scatter(obj[:, 1]+loc[index_obj, 1], obj[:, 2]+loc[index_obj, 2], s=0.1, c="red", cmap='grey')
 
     ax.set_xlim(-100,100)
@@ -507,7 +521,7 @@ def show_slice(data,res,index):
     ax.set_facecolor('black')
     ax.grid(False)
 
-    points_v = np.fromfile('/level5_data/'+data[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 5])
+    points_v = np.fromfile('/level5_data/'+data[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 6])
 
     case = res[index]
 
@@ -516,7 +530,7 @@ def show_slice(data,res,index):
       
     ax.scatter(points_v[:, 0], points_v[:, 1], s=0.01, c="white", cmap='grey')
 
-    #points_v = np.fromfile('/level5_data/train_lidar/host-a004_lidar1_1232815254300468606.bin', dtype=np.float32, count=-1).reshape([-1, 5])
+    #points_v = np.fromfile('/level5_data/train_lidar/host-a004_lidar1_1232815254300468606.bin', dtype=np.float32, count=-1).reshape([-1, 6])
     #loc = res[index]['location']
     #ax.scatter(points_v[:, 0], points_v[:, 3], s=0.01, c="green", cmap='grey')
 
@@ -595,7 +609,7 @@ def rotate(phi):
 
 def filter_points(points_v,save_filename='',bounds=[-500.0, -500.0, -5.0, 500.0, 500.0, 3.0],phi=0.0):
 
-    #points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 5])
+    #points_v = np.fromfile(velodyne_path, dtype=np.float32, count=-1).reshape([-1, 6])
 
     x_img, d_lidar = _project_points(points_v[:,:3])
     tri = Delaunay(x_img)
@@ -790,41 +804,40 @@ def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
     return points, mask, im
 
+def submission_kalman_filter(level5_data,lyftdata,pred_df,max_age=1,min_hits=0):
 
+    # git clone https://github.com/xinshuoweng/AB3DMOT.git  
+    # pip install -r /content/AB3DMOT/requirements.txt
 
-import os, sys
-sys.path.append('/content/AB3DMOT/')
-
-from main import AB3DMOT
-
-det_id2str = {1:'car', 2:'other_vehicle', 3:'pedestrian', 4:'bicycle', 5:'bus', 6:'truck', 7:'motorcycle', 8:'emergency_vehicle', 9:'animal'}
-det_str2id = {'car':1, 'other_vehicle':2, 'pedestrian':3, 'bicycle':4, 'bus':5, 'truck':6, 'motorcycle':7, 'emergency_vehicle':8, 'animal':9}
-
-def submission_kalman_filter(pred,level5_data_test,lyftdata_test):
+    # submission_array = []
+    # for key, value in submission.items():
+    #     submission_array.append([key,value])
+    # df_submission = pd.DataFrame(submission_array,columns=['Id','PredictionString'])
+    # df_submission.to_csv('submission.csv',index=False)
 
     submission_kf = {}
 
     scenes = set([])
-    for index in range(len(level5_data_test)):
-        sample_token = level5_data_test.iloc[index]['Id']
-        sample_record = lyftdata_test.get("sample", sample_token)
+    for index in range(len(level5_data)):
+        sample_token = level5_data.iloc[index]['Id']
+        sample_record = lyftdata.get("sample", sample_token)
         scenes.add(sample_record['scene_token'])
 
     for scene_token in scenes:
-      
-        mot_tracker = AB3DMOT(max_age=5,min_hits=0) 
+    
+        mot_tracker = AB3DMOT(max_age=max_age,min_hits=min_hits) 
         mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
         mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
 
-        scene_record = lyftdata_test.get("scene", scene_token)
+        scene_record = lyftdata.get("scene", scene_token)
         sample_token = scene_record['first_sample_token']
       
         print("Processing %s" % scene_token)
 
         while sample_token:
-            sample_record = lyftdata_test.get("sample", sample_token)
+            sample_record = lyftdata.get("sample", sample_token)
 
-            predictions = pred.loc[pred['Id'] == sample_token].iloc[0]['PredictionString']
+            predictions = pred_df.loc[pred_df['Id'] == sample_token].iloc[0]['PredictionString']
             predictions = np.array(predictions.split()).reshape(-1,9)
 
             dets = []
