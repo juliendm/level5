@@ -792,3 +792,70 @@ def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
 
 
+import os, sys
+sys.path.append('/content/AB3DMOT/')
+
+from main import AB3DMOT
+
+det_id2str = {1:'car', 2:'other_vehicle', 3:'pedestrian', 4:'bicycle', 5:'bus', 6:'truck', 7:'motorcycle', 8:'emergency_vehicle', 9:'animal'}
+det_str2id = {'car':1, 'other_vehicle':2, 'pedestrian':3, 'bicycle':4, 'bus':5, 'truck':6, 'motorcycle':7, 'emergency_vehicle':8, 'animal':9}
+
+def submission_kalman_filter(pred,level5_data_test,lyftdata_test):
+
+    submission_kf = {}
+
+    scenes = set([])
+    for index in range(len(level5_data_test)):
+        sample_token = level5_data_test.iloc[index]['Id']
+        sample_record = lyftdata_test.get("sample", sample_token)
+        scenes.add(sample_record['scene_token'])
+
+    for scene_token in scenes:
+      
+        mot_tracker = AB3DMOT(max_age=5,min_hits=0) 
+        mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
+        mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+
+        scene_record = lyftdata_test.get("scene", scene_token)
+        sample_token = scene_record['first_sample_token']
+      
+        print("Processing %s" % scene_token)
+
+        while sample_token:
+            sample_record = lyftdata_test.get("sample", sample_token)
+
+            predictions = pred.loc[pred['Id'] == sample_token].iloc[0]['PredictionString']
+            predictions = np.array(predictions.split()).reshape(-1,9)
+
+            dets = []
+            additional_info = []
+            for val in predictions:
+                score,x,y,z,w,l,h,yaw,name = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7]),val[8]
+                if w > l:
+                    w,l = l,w
+                    yaw += np.pi/2.0
+
+                dets.append([x,y,z,yaw,l,w,h])
+                additional_info.append([score,det_str2id[name]])
+
+            dets_all = {'dets': np.array(dets), 'info': np.array(additional_info)}    
+
+            trackers = mot_tracker.update(dets_all)
+            
+            pred_str = ''
+            for d in trackers:
+                x,y,z,yaw,l,w,h = d[0],d[1],d[2],d[3],d[4],d[5],d[6]
+                object_id = int(d[7])
+                score = d[8]
+                name = det_id2str[d[9]]
+                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
+
+            submission_kf[sample_token] = pred_str
+            
+            sample_token = sample_record['next']
+
+    return submission_kf
+
+
+
+
