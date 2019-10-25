@@ -231,14 +231,14 @@ def lidar_to_world(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
     box.rotate(Quaternion(pose_record["rotation"]))
     box.translate(np.array(pose_record["translation"]))
 
-def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0):
+def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0,min_score=0.5):
 
     for index in prog_bar(range(len(level5_infos))):
         
         sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
         case = result[index]
         
-        boxes = create_boxes(case,phi)
+        boxes = create_boxes(case,phi=phi,min_score=min_score)
         score = case['score']
 
         world_boxes = []
@@ -258,7 +258,7 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0):
             submission[key] = pred_str
 
 
-def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
+def show_scene(level5_infos,lyftdata,result,index,phi=0.0,min_score=0.5):
 
     # v_filename = level5_infos[index]['velodyne_path'].split('/')
     # v_filename[-2] += "_reduced"
@@ -269,7 +269,7 @@ def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
 
-    boxes_pred = create_boxes(result[index],phi)
+    boxes_pred = create_boxes(result[index],phi=phi,min_score=min_score)
 
     # Fig 1
 
@@ -372,10 +372,10 @@ def show_scene_3d(level5_infos,lyftdata,result,index):
     fig.update_layout(scene_aspectmode='data')
     fig.show()
 
-def create_boxes(case,phi=0.0):
+def create_boxes(case,phi=0.0,min_score=0.5):
 
     score = case['score']
-    number = len(np.where(score>0.5)[0])
+    number = len(np.where(score>min_score)[0])
 
     loc = case['location']
     dim = case['dimensions']
@@ -823,7 +823,7 @@ def submission_kalman_filter(level5_data,lyftdata,pred_df,max_age=1,min_hits=0):
         sample_record = lyftdata.get("sample", sample_token)
         scenes.add(sample_record['scene_token'])
 
-    for scene_token in scenes:
+    for index,scene_token in enumerate(scenes):
     
         mot_tracker = AB3DMOT(max_age=max_age,min_hits=min_hits) 
         mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
@@ -832,17 +832,17 @@ def submission_kalman_filter(level5_data,lyftdata,pred_df,max_age=1,min_hits=0):
         scene_record = lyftdata.get("scene", scene_token)
         sample_token = scene_record['first_sample_token']
       
-        print("Processing %s" % scene_token)
+        print(index,"Processing %s" % scene_token)
 
         while sample_token:
             sample_record = lyftdata.get("sample", sample_token)
  
             dets_all = arrange_pred(pred_df,sample_token)
-            print(len(dets_all['dets']))
-            
+
+            # print(len(dets_all['dets']))
             # dets_all_2 = arrange_pred(pred_df_2,sample_token)
             # matched, unmatched_dets, unmatched_dets_2 = associate_detections_to_trackers(dets_to_8corner(dets_all), dets_to_8corner(dets_all_2))
-            # dets_all['dets'], dets_all['info'] = dets_all['dets'][matched[0]], dets_all['info'][][matched[0]]
+            # dets_all['dets'], dets_all['info'] = dets_all['dets'][matched[:,0]], dets_all['info'][matched[:,0]]
             # print(len(dets_all['dets']))
 
             trackers = mot_tracker.update(dets_all)
