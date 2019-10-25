@@ -665,10 +665,10 @@ def evaluate(config_path,
         gt_annos = [info["annos"] for info in eval_dataset.dataset.kitti_infos]
         if not pickle_result:
             dt_annos = kitti.get_label_annos(result_path_step)
-        result = get_official_eval_result(gt_annos, dt_annos, class_names)
-        print(result)
-        result = get_coco_eval_result(gt_annos, dt_annos, class_names)
-        print(result)
+        # result = get_official_eval_result(gt_annos, dt_annos, class_names)
+        # print(result)
+        # result = get_coco_eval_result(gt_annos, dt_annos, class_names)
+        # print(result)
     if pickle_result:
         with open(result_path_step / "result.pkl", 'wb') as f:
             pickle.dump(dt_annos, f)

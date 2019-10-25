@@ -41,7 +41,7 @@ import numba
 #sys.path.append('/content/AB3DMOT/')
 
 try:
-    from main import AB3DMOT
+    from main import AB3DMOT, associate_detections_to_trackers, convert_3dbox_to_8corner
 except:
     pass
 
@@ -260,11 +260,11 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0):
 
 def show_scene(level5_infos,lyftdata,result,index,phi=0.0):
 
-    v_filename = level5_infos[index]['velodyne_path'].split('/')
-    v_filename[-2] += "_reduced"
-    v_filename = '/'.join(v_filename)
+    # v_filename = level5_infos[index]['velodyne_path'].split('/')
+    # v_filename[-2] += "_reduced"
+    # v_filename = '/'.join(v_filename)
 
-    points_v = np.fromfile(v_filename, dtype=np.float32, count=-1).reshape([-1, 6])
+    points_v = np.fromfile(level5_infos[index]['velodyne_path'], dtype=np.float32, count=-1).reshape([-1, 6])
 
     sample = lyftdata.get('sample', level5_infos[index]['level5_token'])
     _, boxes, _ = lyftdata.get_sample_data(sample['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
@@ -836,39 +836,60 @@ def submission_kalman_filter(level5_data,lyftdata,pred_df,max_age=1,min_hits=0):
 
         while sample_token:
             sample_record = lyftdata.get("sample", sample_token)
-
-            predictions = pred_df.loc[pred_df['Id'] == sample_token].iloc[0]['PredictionString']
-            predictions = np.array(predictions.split()).reshape(-1,9)
-
-            dets = []
-            additional_info = []
-            for val in predictions:
-                score,x,y,z,w,l,h,yaw,name = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7]),val[8]
-                if w > l:
-                    w,l = l,w
-                    yaw += np.pi/2.0
-
-                dets.append([x,y,z,yaw,l,w,h])
-                additional_info.append([score,det_str2id[name]])
-
-            dets_all = {'dets': np.array(dets), 'info': np.array(additional_info)}    
+ 
+            dets_all = arrange_pred(pred_df,sample_token)
+            print(len(dets_all['dets']))
+            
+            # dets_all_2 = arrange_pred(pred_df_2,sample_token)
+            # matched, unmatched_dets, unmatched_dets_2 = associate_detections_to_trackers(dets_to_8corner(dets_all), dets_to_8corner(dets_all_2))
+            # dets_all['dets'], dets_all['info'] = dets_all['dets'][matched[0]], dets_all['info'][][matched[0]]
+            # print(len(dets_all['dets']))
 
             trackers = mot_tracker.update(dets_all)
             
-            pred_str = ''
-            for d in trackers:
-                x,y,z,yaw,l,w,h = d[0],d[1],d[2],d[3],d[4],d[5],d[6]
-                object_id = int(d[7])
-                score = d[8]
-                name = det_id2str[d[9]]
-                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
-
-            submission_kf[sample_token] = pred_str
+            submission_kf[sample_token] = trackers_to_str(trackers)
             
             sample_token = sample_record['next']
 
     return submission_kf
 
+def arrange_pred(pred_df,sample_token):
 
+    predictions = pred_df.loc[pred_df['Id'] == sample_token].iloc[0]['PredictionString']
+    predictions = np.array(predictions.split()).reshape(-1,9)
+
+    dets = []
+    additional_info = []
+    for val in predictions:
+        score,x,y,z,w,l,h,yaw,name = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7]),val[8]
+        if w > l:
+            w,l = l,w
+            yaw += np.pi/2.0
+
+        dets.append([x,y,z,yaw,l,w,h])
+        additional_info.append([score,det_str2id[name]])
+
+    dets_all = {'dets': np.array(dets), 'info': np.array(additional_info)}
+
+    return dets_all
+
+def dets_to_8corner(dets_all):
+
+    dets_8corner = [convert_3dbox_to_8corner(det_tmp) for det_tmp in dets_all['dets']]
+    if len(dets_8corner) > 0: dets_8corner = np.stack(dets_8corner, axis=0)
+    else: dets_8corner = []
+    return dets_8corner
+
+def trackers_to_str(trackers):
+
+    pred_str = ''
+    for d in trackers:
+        x,y,z,yaw,l,w,h = d[0],d[1],d[2],d[3],d[4],d[5],d[6]
+        object_id = int(d[7])
+        score = d[8]
+        name = det_id2str[d[9]]
+        pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
+
+    return pred_str
 
 
