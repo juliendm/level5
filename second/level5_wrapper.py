@@ -231,7 +231,25 @@ def lidar_to_world(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
     box.rotate(Quaternion(pose_record["rotation"]))
     box.translate(np.array(pose_record["translation"]))
 
+def world_to_lidar(box,lyftdata,lidar_top_token): # sample['data']['LIDAR_TOP']
+    
+    sd_record = lyftdata.get("sample_data", lidar_top_token)
+    cs_record = lyftdata.get("calibrated_sensor", sd_record["calibrated_sensor_token"])
+    pose_record = lyftdata.get("ego_pose", sd_record["ego_pose_token"])
+
+    box.translate(-np.array(pose_record["translation"]))
+    box.rotate(Quaternion(pose_record["rotation"]).inverse)
+
+    box.translate(-np.array(cs_record["translation"]))
+    box.rotate(Quaternion(cs_record["rotation"]).inverse)
+
 def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0,min_score=0.5):
+
+    # submission_array = []
+    # for key, value in submission.items():
+    #     submission_array.append([key,value])
+    # df_submission = pd.DataFrame(submission_array,columns=['Id','PredictionString'])
+    # df_submission.to_csv('submission.csv',index=False)
 
     for index in prog_bar(range(len(level5_infos))):
         
@@ -245,11 +263,12 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0,min_score
         for box in boxes:
             lidar_to_world(box,lyftdata,sample['data']['LIDAR_TOP'])
             world_boxes.append(box)
-      
+
         pred_str = ''
         for box_index,box in enumerate(world_boxes):
+            if abs(box.orientation.yaw_pitch_roll[0]-box.orientation.radians) > 0.0000001: raise ValueError
             pred_str += '%f %f %f %f %f %f %f %f %s ' % (score[box_index],box.center[0],box.center[1],box.center[2],box.wlh[0],box.wlh[1],box.wlh[2],box.orientation.radians,box.name)
-        
+
         key = level5_infos[index]['level5_token']
         
         if key in submission:
@@ -257,6 +276,69 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0,min_score
         else:
             submission[key] = pred_str
 
+def show_sample(sample_token,lyftdata,train=False,result=None,level5_infos=None,submission_dfs=None,phi=0.0,min_score=0.5,sub_folders=False):
+
+    sample_record = lyftdata.get('sample', sample_token)
+
+    sample_lidar = lyftdata.get('sample_data',sample_record['data']['LIDAR_TOP'])
+    velodyne_path = os.path.join(lyftdata.data_path,sample_lidar['filename'])
+
+    if sub_folders:
+        velodyne_path = velodyne_path.split('/')
+        velodyne_path.insert(-1,velodyne_path[-1].split('_')[0])
+        velodyne_path = '/'.join(velodyne_path)
+
+    points_v = np.fromfile(velodyne_path, dtype=np.float32).reshape((-1, 6))
+
+    # Fig 1
+
+    fig1, ax1 = plt.subplots(1, 1, figsize=(15, 15))
+    ax1.grid(False)
+    ax1.set_xlim(-100,100)
+    ax1.set_ylim(-100,100)
+    ax1.scatter(points_v[:, 0], points_v[:, 1], s=5.0, c=points_v[:,3:6])
+
+    # Fig 2
+
+    fig2, ax2 = plt.subplots(1, 1, figsize=(15, 2))
+    mask = np.ones(points_v.shape[0], dtype=bool)
+    mask = np.logical_and(mask, points_v[:, 0] > -10)
+    mask = np.logical_and(mask, points_v[:, 0] < 100)
+    ax2.scatter(points_v[mask, 1], points_v[mask, 2], s=5.0, c=points_v[mask,3:6])
+    ax2.grid(False)
+    ax2.set_xlim(-15,15)
+    ax2.set_ylim(-3,1)
+
+    # Boxes
+
+    if train:
+        _, boxes, _ = lyftdata.get_sample_data(sample_record['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
+        for box in boxes:
+            points = view_points(box.corners(), view=np.eye(3), normalize=False)
+            ax1.plot(points[0,:],points[1,:],'r')
+            ax2.plot(points[1,:],points[2,:],'r')
+
+    if result is not None:
+        for index in range(len(level5_infos)):
+            if level5_infos[index]['level5_token'] == sample_token:
+                break
+        boxes_pred = create_boxes(result[index],phi=phi,min_score=min_score)
+        for box in boxes_pred:
+            points = view_points(box.corners(), view=np.eye(3), normalize=False)
+            ax1.plot(points[0,:],points[1,:],'b')
+            ax2.plot(points[1,:],points[2,:],'b')
+
+    if submission_dfs is not None:
+        colors = 'rbgcky'
+        for index,submission_df in enumerate(submission_dfs):
+          boxes_subm = submission_to_boxes(submission_df,sample_token,lyftdata,min_score=min_score)
+          for box in boxes_subm:
+              points = view_points(box.corners(), view=np.eye(3), normalize=False)
+              ax1.plot(points[0,:],points[1,:],c=colors[index%len(colors)],linestyle='dashed')
+              ax2.plot(points[1,:],points[2,:],c=colors[index%len(colors)],linestyle='dashed')
+
+
+    plt.show()
 
 def show_scene(level5_infos,lyftdata,result,index,phi=0.0,min_score=0.5):
 
@@ -407,6 +489,30 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
         boxes.append(box)
 
     return boxes
+
+def submission_to_boxes(submission_df,sample_token,lyftdata,min_score=0.5):
+
+    predictions = submission_df.loc[submission_df['Id'] == sample_token].iloc[0]['PredictionString']
+    predictions = np.array(predictions.split()).reshape(-1,9)
+
+    boxes = []
+    for val in predictions:
+        score,x,y,z,w,l,h,yaw,name = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7]),val[8]
+        if w > l:
+            w,l = l,w
+            yaw += np.pi/2.0
+
+        if score >= min_score:
+            box = Box([x,y,z], [w,l,h], Quaternion(axis=[0,0,1], angle=yaw),
+                    name=name_map_reverse[name], token="token")
+
+            sample = lyftdata.get('sample', sample_token)
+            world_to_lidar(box,lyftdata,sample['data']['LIDAR_TOP'])
+
+            boxes.append(box)
+
+    return boxes
+
 
 def show_grounds(level5_infos,lyftdata,index):
 

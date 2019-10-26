@@ -1,7 +1,7 @@
 model: {
   second: {
     voxel_generator {
-      point_cloud_range : [-48.0, -20.0, -3, 48.0, 20.0, 1]
+      point_cloud_range : [-48.0, -48.0, -3, 48.0, 48.0, 1]
       voxel_size : [0.2, 0.2, 4]   # 1000 x 500 x 1
       max_number_of_points_per_voxel : 100
     }
@@ -78,7 +78,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.77,0.81,1.78] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -19.9, -1.465] # origin_offset + strides / 2
+          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
@@ -88,7 +88,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.63,1.76,1.44] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -19.9, -1.465] # origin_offset + strides / 2
+          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
@@ -98,7 +98,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.63,1.76,1.44] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -19.9, -1.465] # origin_offset + strides / 2
+          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
