@@ -266,8 +266,8 @@ def pred_to_submission(submission,level5_infos,lyftdata,result,phi=0.0,min_score
 
         pred_str = ''
         for box_index,box in enumerate(world_boxes):
-            if abs(box.orientation.yaw_pitch_roll[0]-box.orientation.radians) > 0.0000001: raise ValueError
-            pred_str += '%f %f %f %f %f %f %f %f %s ' % (score[box_index],box.center[0],box.center[1],box.center[2],box.wlh[0],box.wlh[1],box.wlh[2],box.orientation.radians,box.name)
+            # if abs(box.orientation.yaw_pitch_roll[0]-box.orientation.radians) > 0.0000001: raise ValueError
+            pred_str += '%f %f %f %f %f %f %f %f %s ' % (score[box_index],box.center[0],box.center[1],box.center[2],box.wlh[0],box.wlh[1],box.wlh[2],box.orientation.yaw_pitch_roll[0],box.name)
 
         key = level5_infos[index]['level5_token']
         
@@ -474,15 +474,17 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
         x =  np.cos(phi*np.pi/180.0)*loc[box_index][0] + np.sin(phi*np.pi/180.0)*loc[box_index][1]
         y = -np.sin(phi*np.pi/180.0)*loc[box_index][0] + np.cos(phi*np.pi/180.0)*loc[box_index][1]
-        angle = (yaw[box_index]+phi*np.pi/180.0-np.pi/2.0)/2.0
 
+        # angle = (yaw[box_index]+phi*np.pi/180.0-np.pi/2.0)/2.0
+        # Quaternion(scalar=np.cos(angle), vector=[0, 0, np.sin(angle)]).inverse,
+          
         box = Box(
                 [x,y,loc[box_index][2]+dim[box_index][1]/2.0],
 
                 [dim[box_index][2],dim[box_index][0],dim[box_index][1]], # dim == lhw; need wlh
           
-                Quaternion(scalar=np.cos(angle), vector=[0, 0, np.sin(angle)]).inverse,
-          
+                Quaternion(axis=[0,0,1], angle=-yaw[box_index]+np.pi/2.0),
+
                 name=name_map_reverse[name[box_index]],
                 token="token",
             )
