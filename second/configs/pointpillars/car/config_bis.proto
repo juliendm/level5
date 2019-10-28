@@ -1,8 +1,8 @@
 model: {
   second: {
     voxel_generator {
-      point_cloud_range : [-48.0, -48.0, -3, 48.0, 48.0, 1]
-      voxel_size : [0.2, 0.2, 4]   # 1000 x 500 x 1
+      point_cloud_range : [0.0, -48.0, -4, 68.0, 48.0, 2]
+      voxel_size : [0.2, 0.2, 6]   # 1000 x 500 x 1
       max_number_of_points_per_voxel : 100
     }
     num_class: 3
@@ -55,7 +55,7 @@ model: {
 
     loss_norm_type: NormByNumPositives
     # Postprocess
-    post_center_limit_range: [-48.0, -20.0, -8, 48.0, 20.0, 6]
+    post_center_limit_range: [0.0, -48.0, -8, 68.0, 48.0, 6]
     use_rotate_nms: false
     use_multi_class_nms: false
     nms_pre_max_size: 1000
@@ -78,7 +78,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.77,0.81,1.78] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
+          offsets: [0.1, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
@@ -88,7 +88,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.63,1.76,1.44] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
+          offsets: [0.1, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
@@ -98,7 +98,7 @@ model: {
         anchor_generator_stride: {
           sizes: [0.63,1.76,1.44] # wlh
           strides: [0.2, 0.2, 0.0] # if generate only 1 z_center, z_stride will be ignored
-          offsets: [-47.9, -47.9, -1.465] # origin_offset + strides / 2
+          offsets: [0.1, -47.9, -1.465] # origin_offset + strides / 2
           rotations: [0, 1.57] # 0, pi/2
           matched_threshold : 0.5
           unmatched_threshold : 0.35
@@ -117,14 +117,14 @@ model: {
 
 
 train_input_reader: {
-  record_file_path: "/floyd/home/level5_data/level5_train.tfrecord"
+  record_file_path: "level5_data/level5_train.tfrecord"
   class_names: ["pedestrian", "bicycle", "motorcycle"]
   max_num_epochs : 160
-  batch_size: 2
+  batch_size: 6
   prefetch_size : 25
   max_number_of_voxels: 12000
   shuffle_points: true
-  num_workers: 2
+  num_workers: 3
   groundtruth_localization_noise_std: [0.25, 0.25, 0.25]
   groundtruth_rotation_uniform_noise: [-0.15707963267, 0.15707963267]
   global_rotation_uniform_noise: [-0.78539816, 0.78539816]
@@ -135,7 +135,7 @@ train_input_reader: {
   groundtruth_points_drop_percentage: 0.0
   groundtruth_drop_max_keep_points: 15
   database_sampler {
-    database_info_path: "/floyd/home/level5_data/level5_dbinfos_train.pkl"
+    database_info_path: "level5_data/level5_dbinfos_train.pkl"
     database_prep_steps {
       filter_by_difficulty {
         removed_difficulties: [-1]
@@ -147,8 +147,8 @@ train_input_reader: {
 
   remove_unknown_examples: false
   remove_environment: false
-  kitti_info_path: "/floyd/home/level5_data/level5_infos_train.pkl"
-  kitti_root_path: "/floyd/home/level5_data"
+  kitti_info_path: "level5_data/level5_infos_train_avail.pkl"
+  kitti_root_path: "level5_data"
 }
 
 train_config: {
@@ -179,7 +179,7 @@ train_config: {
 }
 
 eval_input_reader: {
-  record_file_path: "/floyd/home/level5_data/level5_val.tfrecord"
+  record_file_path: "level5_data/level5_val.tfrecord"
   class_names: ["pedestrian", "bicycle", "motorcycle"]
   batch_size: 3
   max_num_epochs : 160
@@ -189,6 +189,6 @@ eval_input_reader: {
   num_workers: 3
   anchor_area_threshold: 1
   remove_environment: false
-  kitti_info_path: "/floyd/home/level5_data/level5_infos_val.pkl"
-  kitti_root_path: "/floyd/home/level5_data"
+  kitti_info_path: "level5_data/level5_infos_val_avail.pkl"
+  kitti_root_path: "level5_data"
 }

@@ -314,6 +314,11 @@ def show_sample(sample_token,lyftdata,train=False,result=None,level5_infos=None,
     if train:
         _, boxes, _ = lyftdata.get_sample_data(sample_record['data']['LIDAR_TOP'], flat_vehicle_coordinates=False)
         for box in boxes:
+
+            # box.center[0] = - box.center[0]
+            # box.center[1] = - box.center[1]
+            # box.orientation = Quaternion(axis=[0,0,1], angle=box.orientation.yaw_pitch_roll[0]-np.pi)
+
             points = view_points(box.corners(), view=np.eye(3), normalize=False)
             ax1.plot(points[0,:],points[1,:],'r')
             ax2.plot(points[1,:],points[2,:],'r')
