@@ -917,6 +917,127 @@ def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
     return points, mask, im
 
+
+def submission_kalman_filter_improved(scene_token,lyftdata,pred_df):
+
+    # git clone https://github.com/xinshuoweng/AB3DMOT.git  
+    # pip install -r /content/AB3DMOT/requirements.txt
+
+    # submission_array = []
+    # for key, value in submission.items():
+    #     submission_array.append([key,value])
+    # df_submission = pd.DataFrame(submission_array,columns=['Id','PredictionString'])
+    # df_submission.to_csv('submission.csv',index=False)
+
+    submission_kf = {}
+
+    for scene_token in [scene_token]:
+    
+        scene_record = lyftdata.get("scene", scene_token)
+        print("Processing %s" % scene_token)
+        
+        
+        history = {}
+
+        #
+        # Forward Pass
+        #
+        
+        mot_tracker = AB3DMOT(max_age=10000000,min_hits=0) 
+        mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
+        mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+        sample_token = scene_record['first_sample_token']
+        sample_index = 0
+        while sample_token:
+            sample_record = lyftdata.get("sample", sample_token)
+ 
+            # 1. +/- 180
+            # 2. All - add 180 (check with a submission)
+            dets_all = arrange_pred(pred_df,sample_token)
+            
+            mot_tracker.update(dets_all)
+            
+            for tracker in mot_tracker.trackers:
+                if not tracker.id in history:
+                    history[tracker.id] = {'hits':[0]*(mot_tracker.frame_count-1),'states':[[np.nan]*7]*(mot_tracker.frame_count-1)}
+                history[tracker.id]['hits'].append(1 if tracker.time_since_update == 0 else 0)
+                history[tracker.id]['states'].append(list(tracker.get_state()))
+
+            last_sample_token = sample_token
+#             if mot_tracker.frame_count == 15:
+#                 break
+
+            sample_index += 1
+            sample_token = sample_record['next']
+        
+        #
+        # Intermediate Processing
+        #
+        
+        history_stationary,history_moving = separte_history(history) # Based on Variance
+        # Delete ones with only 1 hit     # Might get them back in backward Pass, and if not, probably FP
+        # Delete all [0…010…0]                                       sum = 1
+        # Delete all [0…0100010…0] if Non stationary    sum > 1 and no 2 neighbors if std > 0.1
+        history_stationary = filter_stationary(history_stationary)
+        history_moving = filter_moving(history_moving)
+        
+        history_stationary = keep_last_one(history_stationary)
+        history_moving = override_with_last_dims(history_moving)
+        
+        #
+        # Backward Pass
+        #
+        
+        mot_tracker = AB3DMOT(max_age=10000000,min_hits=0) 
+        mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
+        mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+        
+        sample_token = last_sample_token # scene_record['last_sample_token']
+        biggest_sample_index = sample_index
+        while sample_token:
+            sample_record = lyftdata.get("sample", sample_token)
+            
+            if sample_index == biggest_sample_index:
+                # Create on tracker for each in history_moving
+                for key,item in history_moving.items():
+                    tracker = KalmanBoxTracker(item, item)
+                    tracker.id = key
+                    mot_tracker.trackers.append(tracker)
+                # And then never Create a new tracker. Or in practice, ignore any trackers beyond given length
+                tracker_length_bound = len(mot_tracker.trackers)
+            else:
+                dets_all = arrange_history(history_moving,sample_index,sample_token) # If history has NaNs: dets_all = arrange_pred(pred_df,sample_token)
+                mot_tracker.update(dets_all)
+
+            for tracker in mot_tracker.trackers[:tracker_length_bound]:
+                if is_all_nan(history[tracker.id]['states'][sample_index]):
+                    history[tracker.id]['hits'][sample_index] = 1 if tracker.time_since_update == 0 else 0
+                    history[tracker.id]['states'][sample_index] = list(tracker.get_state())
+
+            sample_index -= 1
+            sample_token = sample_record['prev']
+        
+        #  
+        # Use Candidates to make submission
+        #
+        
+        sample_token = scene_record['first_sample_token']
+        sample_index = 0
+        while sample_token:
+            sample_record = lyftdata.get("sample", sample_token)
+ 
+            # Check in range and has lidar points if hit == 0
+
+            # Stationary
+            submission_kf = {}
+            # Moving
+            submission_kf = {}
+
+            sample_index += 1
+            sample_token = sample_record['next']
+    
+    return submission_kf
+
 def submission_kalman_filter(level5_data,lyftdata,pred_df,max_age=1,min_hits=0):
 
     # git clone https://github.com/xinshuoweng/AB3DMOT.git  
