@@ -38,10 +38,9 @@ from itertools import compress
 import numba
 
 
-#sys.path.append('/content/AB3DMOT/')
-
+sys.path.append('/content/AB3DMOT/')
 try:
-    from main import AB3DMOT, associate_detections_to_trackers, convert_3dbox_to_8corner
+    from main import AB3DMOT, associate_detections_to_trackers, convert_3dbox_to_8corner, KalmanBoxTracker
 except:
     pass
 
@@ -955,8 +954,9 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
         mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
         mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
         sample_token = scene_record['first_sample_token']
-        sample_index = 0
+        sample_index = -1
         while sample_token:
+            sample_index += 1
             sample_record = lyftdata.get("sample", sample_token)
  
             # 1. +/- 180
@@ -975,10 +975,9 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
                 history[tracker.id]['infos'].append(list(tracker.info))
 
             last_sample_token = sample_token
-            if mot_tracker.frame_count == 15:
-                break
+            # if mot_tracker.frame_count == 15:
+            #     break
 
-            sample_index += 1
             sample_token = sample_record['next']
 
         #
@@ -1030,6 +1029,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
                 if np.isnan(history_moving[tracker.id]['states'][sample_index]).any():
                     history_moving[tracker.id]['hits'][sample_index] = 1 if tracker.time_since_update == 0 else 0
                     history_moving[tracker.id]['states'][sample_index][:4] = tracker.get_state()[:4]
+                    history_moving[tracker.id]['infos'][sample_index] = history_moving[tracker.id]['infos'][sample_index+1]
 
             sample_index -= 1
             sample_token = sample_record['prev']
@@ -1066,7 +1066,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
                     if number_of_points(lidar_box,points_v) < 2:
                         continue
 
-                info  = value_stationary[tracker_id]['infos'][sample_index]
+                info  = value_stationary[tracker_id]['info']
                 x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
                 name = det_id2str[info[0]]
                 pred_str += '%f %f %f %f %f %f %f %s ' % (x,y,z,w,l,h,yaw,name)
@@ -1125,7 +1125,7 @@ def number_of_points(lidar_box,points_v):
                       [ 0., 0., 1., 0.],
                       [ 0., 0., 0., 1.]])
 
-    rbbox_cam = np.array([[lidar_box.center[0], lidar_box.center[1], lidar_box.center[2]-lidar_box.wlh[2]/2.0], lidar_box.wlh[1],lidar_box.wlh[2],lidar_box.wlh[0], -lidar_box.orientation.yaw_pitch_roll[0]+np.pi/2.0]])
+    rbbox_cam = np.array([[lidar_box.center[0], lidar_box.center[1], lidar_box.center[2]-lidar_box.wlh[2]/2.0, lidar_box.wlh[1],lidar_box.wlh[2],lidar_box.wlh[0], -lidar_box.orientation.yaw_pitch_roll[0]+np.pi/2.0]])
     rbbox_lidar = box_np_ops.box_camera_to_lidar(rbbox_cam, rect, Trv2c)
     indices = box_np_ops.points_in_rbbox(points_v[:, :3], rbbox_lidar)
     num_points_in_gt = indices.sum(0)
@@ -1194,8 +1194,13 @@ def filter_moving(history_moving):
 def keep_last_one_or_avergare_first_two(history_stationary, history_misclassified):
     value_stationary = {}
 
-    for tracker_id in history_stationary.keys(): # Variance is already filtered under certain threshold
-        value_stationary[tracker_id] = {'hits':history_stationary[tracker_id]['hits'], 'state':history_stationary[tracker_id]['states'][-1]}
+    for tracker_id in history_stationary.keys(): # Std is already filtered under certain threshold
+        
+        hits = history_stationary[tracker_id]['hits']
+        if np.isnan(hits).any(): hits[np.isnan(hits)] = 0
+        value_stationary[tracker_id] = {'hits':hits,
+                                        'state':history_stationary[tracker_id]['states'][-1],
+                                        'info':history_stationary[tracker_id]['infos'][-1]}
 
     for tracker_id in history_misclassified.keys():
         first_hit = True
@@ -1207,9 +1212,11 @@ def keep_last_one_or_avergare_first_two(history_stationary, history_misclassifie
                 else:
                     state = (state+history_misclassified[tracker_id]['states'][index])/2.0
                     break
-        value_stationary[tracker_id] = {'hits':history_misclassified[tracker_id]['hits'],
+        hits = history_misclassified[tracker_id]['hits']
+        if np.isnan(hits).any(): hits[np.isnan(hits)] = 0
+        value_stationary[tracker_id] = {'hits':hits,
                                         'state':state,
-                                        'infos':history_misclassified[tracker_id]['infos']}
+                                        'info':history_stationary[tracker_id]['infos'][-1]}
 
     return value_stationary
 
@@ -1255,10 +1262,8 @@ def arrange_history(history_moving,sample_index,pred_df,sample_token):
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets_8corner, trks_8corner)
 
         # Concatenate trks_all and unmatched_dets
-        print(unmatched_dets)
-        raise ValueError
-
-        trks_all = {'dets': trks_all['dets'], 'info': trks_all['info']}
+        trks_all = {'dets': np.concatenate((trks_all['dets'],dets_all['dets'][unmatched_dets]),axis=0),
+                    'info': np.concatenate((trks_all['info'],dets_all['info'][unmatched_dets]),axis=0)}
 
     return trks_all
 
