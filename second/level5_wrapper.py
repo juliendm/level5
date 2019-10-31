@@ -926,7 +926,7 @@ def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
 
 
-def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False):
+def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,sub_folders=False):
 
     # git clone https://github.com/xinshuoweng/AB3DMOT.git  
     # pip install -r /content/AB3DMOT/requirements.txt
@@ -949,6 +949,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
         #
         # Forward Pass
         #
+        print('Forward Pass')
         
         mot_tracker = AB3DMOT(max_age=10000000,min_hits=0) 
         mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
@@ -959,8 +960,6 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
             sample_index += 1
             sample_record = lyftdata.get("sample", sample_token)
  
-            # 1. +/- 180
-            # 2. All - add 180 (check with a submission)
             dets_all = arrange_pred(pred_df,sample_token)
             
             mot_tracker.update(dets_all)
@@ -983,6 +982,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
         #
         # Intermediate Processing
         #
+        print('Intermediate Processing')
 
         for tracker_id in history.keys():
             history[tracker_id]['states'] = np.array(history[tracker_id]['states'])
@@ -990,7 +990,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
         
         history = filter_single(history) # Might get them back in Backward Pass, and if not, probably False Positive
         # TODO: Play with Value!!!!!!!!!!!
-        history_stationary, history_moving = separate_history(history, std_threshold=0.5) # Based on Std
+        history_stationary, history_moving = separate_history(history, std_threshold=std_threshold) # Based on Std
         history_moving, history_misclassified = filter_moving(history_moving)
 
         value_stationary = keep_last_one_or_avergare_first_two(history_stationary, history_misclassified)
@@ -1003,6 +1003,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
         #
         # Backward Pass
         #
+        print('Backward Pass')
         
         mot_tracker = AB3DMOT(max_age=10000000,min_hits=0) 
         mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
@@ -1034,9 +1035,20 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
             sample_index -= 1
             sample_token = sample_record['prev']
         
+        #
+        # Remove Extrapolation - Keep only interpolation
+        #
+        print('Removing Extrapolation')
+
+        for tracker_id in value_stationary.keys():
+            no_extrapolation(value_stationary[tracker_id]['hits'])
+        for tracker_id in history_moving.keys():
+            no_extrapolation(history_moving[tracker_id]['hits'])
+
         #  
         # Use Candidates to make submission
         #
+        print('Using Candidates to make submission')
         
         sample_token = scene_record['first_sample_token']
         sample_index = 0
@@ -1049,7 +1061,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
                 velodyne_path = velodyne_path.split('/')
                 velodyne_path.insert(-1,velodyne_path[-1].split('_')[0])
                 velodyne_path = '/'.join(velodyne_path)
-            points_v = np.fromfile(velodyne_path, dtype=np.float32).reshape((-1, 6))
+            points_v = [] # np.fromfile(velodyne_path, dtype=np.float32).reshape((-1, 6))
  
             pred_str = ''
 
@@ -1057,9 +1069,13 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
             for tracker_id in value_stationary.keys():
 
                 hit = value_stationary[tracker_id]['hits'][sample_index]
+
+                if hit == -1:
+                    continue
+
                 state = value_stationary[tracker_id]['state']
 
-                if not hit:
+                if hit == 0:
                     lidar_box = state_to_lidar_box(state,sample_token,lyftdata)
                     if tracker_range(lidar_box) > 100.0:
                         continue
@@ -1075,9 +1091,13 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
             for tracker_id in history_moving.keys():
 
                 hit = history_moving[tracker_id]['hits'][sample_index]
+
+                if hit == -1:
+                    continue
+
                 state = history_moving[tracker_id]['states'][sample_index]
 
-                if not hit:
+                if hit == 0:
                     lidar_box = state_to_lidar_box(state,sample_token,lyftdata)
                     if tracker_range(lidar_box) > 100.0:
                         continue
@@ -1096,6 +1116,33 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,sub_folders=False)
 
     return submission_kf
 
+def no_extrapolation(vec, padding=0):
+
+    index = 0
+    while vec[index] != 1:
+        vec[index] = -1
+        index += 1
+    vec[max(0,index-padding):index] = 0
+
+    index = len(vec)-1
+    while vec[index] != 1:
+        vec[index] = -1
+        index -= 1
+    vec[index+1:min(len(vec),index+padding+1)] = 0
+
+def normalize_angle(angle):
+
+    while (angle <= -np.pi):
+        angle += 2.0*np.pi
+    while (angle > np.pi):
+        angle -= 2.0*np.pi
+    return angle
+
+def clip_angle(angle): # Since scoring solely depends on IOU, orientation doesn't matter
+
+    if angle < 0:
+        return angle + np.pi
+    return angle
 
 def state_to_lidar_box(state,sample_token,lyftdata):
 
@@ -1115,24 +1162,24 @@ def tracker_range(lidar_box):
     
 def number_of_points(lidar_box,points_v):
 
-    rect = np.array([[ 1., 0., 0., 0.],
-                     [ 0., 1., 0., 0.],
-                     [ 0., 0., 1., 0.],
-                     [ 0., 0., 0., 1.]])
+    # rect = np.array([[ 1., 0., 0., 0.],
+    #                  [ 0., 1., 0., 0.],
+    #                  [ 0., 0., 1., 0.],
+    #                  [ 0., 0., 0., 1.]])
       
-    Trv2c = np.array([[ 1., 0., 0., 0.],
-                      [ 0., 1., 0., 0.],
-                      [ 0., 0., 1., 0.],
-                      [ 0., 0., 0., 1.]])
+    # Trv2c = np.array([[ 1., 0., 0., 0.],
+    #                   [ 0., 1., 0., 0.],
+    #                   [ 0., 0., 1., 0.],
+    #                   [ 0., 0., 0., 1.]])
 
-    rbbox_cam = np.array([[lidar_box.center[0], lidar_box.center[1], lidar_box.center[2]-lidar_box.wlh[2]/2.0, lidar_box.wlh[1],lidar_box.wlh[2],lidar_box.wlh[0], -lidar_box.orientation.yaw_pitch_roll[0]+np.pi/2.0]])
-    rbbox_lidar = box_np_ops.box_camera_to_lidar(rbbox_cam, rect, Trv2c)
-    indices = box_np_ops.points_in_rbbox(points_v[:, :3], rbbox_lidar)
-    num_points_in_gt = indices.sum(0)
+    # rbbox_cam = np.array([[lidar_box.center[0], lidar_box.center[1], lidar_box.center[2]-lidar_box.wlh[2]/2.0, lidar_box.wlh[1],lidar_box.wlh[2],lidar_box.wlh[0], -lidar_box.orientation.yaw_pitch_roll[0]+np.pi/2.0]])
+    # rbbox_lidar = box_np_ops.box_camera_to_lidar(rbbox_cam, rect, Trv2c)
+    # indices = box_np_ops.points_in_rbbox(points_v[:, :3], rbbox_lidar)
+    # num_points_in_gt = indices.sum(0)
 
-    print(num_points_in_gt)
+    # print(num_points_in_gt)
 
-    raise ValueError
+    # raise ValueError
 
     return 1000
 
@@ -1170,26 +1217,28 @@ def separate_history(history,std_threshold=0.5):
 def filter_moving(history_moving):
     # Delete all [0 ... 0 1 0 0 0 1 0 ... 0] if Non stationary sum > 1 and no 2 neighbors if std > 0.1
 
-    history_moving_filtered = {}
-    history_misclassified = {}
+    # history_moving_filtered = {}
+    # history_misclassified = {}
 
-    for tracker_id in history_moving.keys():
-        biggest_hit_streak = 0
-        hit_streak = 0
-        for hit in history_moving[tracker_id]['hits']:
-            if hit:
-                hit_streak += 1
-                if hit_streak > biggest_hit_streak:
-                    biggest_hit_streak = hit_streak
-            else:
-                hit_streak = 0
+    # for tracker_id in history_moving.keys():
+    #     biggest_hit_streak = 0
+    #     hit_streak = 0
+    #     for hit in history_moving[tracker_id]['hits']:
+    #         if hit == 1:
+    #             hit_streak += 1
+    #             if hit_streak > biggest_hit_streak:
+    #                 biggest_hit_streak = hit_streak
+    #         else:
+    #             hit_streak = 0
 
-        if biggest_hit_streak > 1:
-            history_moving_filtered[tracker_id] = history_moving[tracker_id]
-        else:
-            history_misclassified[tracker_id] = history_moving[tracker_id]
+    #     if biggest_hit_streak > 1:
+    #         history_moving_filtered[tracker_id] = history_moving[tracker_id]
+    #     else:
+    #         history_misclassified[tracker_id] = history_moving[tracker_id]
 
-    return history_moving_filtered, history_misclassified
+    # return history_moving_filtered, history_misclassified
+
+    return history_moving, {}
 
 def keep_last_one_or_avergare_first_two(history_stationary, history_misclassified):
     value_stationary = {}
@@ -1205,7 +1254,7 @@ def keep_last_one_or_avergare_first_two(history_stationary, history_misclassifie
     for tracker_id in history_misclassified.keys():
         first_hit = True
         for index,hit in enumerate(history_misclassified[tracker_id]['hits']):
-            if hit:
+            if hit == 1:
                 if first_hit:
                     state = history_misclassified[tracker_id]['states'][index]
                     first_hit = False
@@ -1216,7 +1265,7 @@ def keep_last_one_or_avergare_first_two(history_stationary, history_misclassifie
         if np.isnan(hits).any(): hits[np.isnan(hits)] = 0
         value_stationary[tracker_id] = {'hits':hits,
                                         'state':state,
-                                        'info':history_stationary[tracker_id]['infos'][-1]}
+                                        'info':history_misclassified[tracker_id]['infos'][-1]}
 
     return value_stationary
 
@@ -1279,6 +1328,10 @@ def arrange_pred(pred_df,sample_token):
         if w > l:
             w,l = l,w
             yaw += np.pi/2.0
+
+        # 1. +/- 180
+        # 2. All - add 180 (check with a submission)
+        yaw = clip_angle(normalize_angle(yaw))
 
         dets.append([x,y,z,yaw,l,w,h])
         additional_info.append([det_str2id[name]])
