@@ -496,7 +496,7 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
     return boxes
 
-def submission_to_boxes(submission_df,sample_token,lyftdata,min_score=0.5):
+def submission_to_boxes(submission_df,sample_token,lyftdata,min_score=0.5,switch_to_lidar=True):
 
     predictions = submission_df.loc[submission_df['Id'] == sample_token].iloc[0]['PredictionString']
     predictions = np.array(predictions.split()).reshape(-1,9)
@@ -512,8 +512,9 @@ def submission_to_boxes(submission_df,sample_token,lyftdata,min_score=0.5):
             box = Box([x,y,z], [w,l,h], Quaternion(axis=[0,0,1], angle=yaw),
                     name=name_map_reverse[name], token="token")
 
-            sample = lyftdata.get('sample', sample_token)
-            world_to_lidar(box,lyftdata,sample['data']['LIDAR_TOP'])
+            if switch_to_lidar:
+                sample = lyftdata.get('sample', sample_token)
+                world_to_lidar(box,lyftdata,sample['data']['LIDAR_TOP'])
 
             boxes.append(box)
 
@@ -920,9 +921,50 @@ def map_pointcloud_to_image(lyftdata, pc, camera_token):
 
 
 
+def show_scene_all_frames(scene_token,submission_df,lyftdata): # lyftdata = lyftdata_test / lyftdata_train
 
+    # sample_token = level5_data_train.iloc[100]['Id']
+    # sample_record = lyftdata.get("sample", sample_token)
+    # scene_token = sample_record['scene_token']
 
+    fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+    ax.grid(False)
 
+    for scene_token in [scene_token]:
+
+        scene_record = lyftdata.get("scene", scene_token)
+        sample_token = scene_record['first_sample_token']
+
+        index = 0
+        while sample_token:
+
+            try:
+
+                boxes_subm = submission_to_boxes(submission_df,sample_token,lyftdata,min_score=0.0,switch_to_lidar=False)
+                
+                for box in boxes_subm:
+                
+                    points = view_points(box.corners(), view=np.eye(3), normalize=False)
+                    ax.plot(points[0,:],points[1,:],c=cmap(norm(index)),alpha=0.2)
+                    
+                    sample_record = lyftdata.get('sample', sample_token)
+                    sd_record = lyftdata.get("sample_data", sample_record['data']['LIDAR_TOP'])
+                    cs_record = lyftdata.get("calibrated_sensor", sd_record["calibrated_sensor_token"])
+                    pose_record = lyftdata.get("ego_pose", sd_record["ego_pose_token"])
+                    pos = np.array(cs_record["translation"])+np.array(pose_record["translation"])
+                    ax.plot(pos[0],pos[1],'*',c=cmap(norm(index)))
+
+                    # circle = plt.Circle((pos[0],pos[1]), 100.0, color=cmap(norm(index)), fill=False)
+                    # ax.add_artist(circle)
+
+                index += 1
+                sample_token = lyftdata.get("sample", sample_token)['next']
+
+            except:
+                break
+            
+    ax.axis('scaled')
+    plt.show()
 
 
 
