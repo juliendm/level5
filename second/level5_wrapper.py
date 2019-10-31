@@ -1,6 +1,7 @@
 
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import Normalize
 
 try:
     import plotly.graph_objects as go
@@ -926,6 +927,9 @@ def show_scene_all_frames(scene_token,submission_df,lyftdata): # lyftdata = lyft
     # sample_token = level5_data_train.iloc[100]['Id']
     # sample_record = lyftdata.get("sample", sample_token)
     # scene_token = sample_record['scene_token']
+
+    cmap = cm.jet
+    norm = Normalize(vmin=0, vmax=100)
 
     fig, ax = plt.subplots(1, 1, figsize=(15, 15))
     ax.grid(False)
