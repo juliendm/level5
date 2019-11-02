@@ -1012,7 +1012,7 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
             sample_index += 1
             sample_record = lyftdata.get("sample", sample_token)
  
-            dets_all = arrange_pred(pred_df,sample_token)
+            dets_all = arrange_pred_score(pred_df,sample_token)
             
             mot_tracker.update(dets_all)
             
@@ -1158,8 +1158,9 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
 
                 info  = value_stationary[tracker_id]['info']
                 x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
-                name = det_id2str[info[0]]
-                pred_str += '%f %f %f %f %f %f %f %s ' % (x,y,z,w,l,h,yaw,name)
+                score = info[0]
+                name = det_id2str[info[1]]
+                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
 
             # Moving
             for tracker_id in history_moving.keys():
@@ -1180,8 +1181,9 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
 
                 info  = history_moving[tracker_id]['infos'][sample_index]
                 x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
-                name = det_id2str[info[0]]
-                pred_str += '%f %f %f %f %f %f %f %s ' % (x,y,z,w,l,h,yaw,name)
+                score = info[0]
+                name = det_id2str[info[1]]
+                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
 
             submission_kf[sample_token] = pred_str
 
@@ -1378,7 +1380,7 @@ def arrange_history(history_moving,sample_index,pred_df,sample_token,trackers_al
 
     if has_nan:
 
-        dets_all = arrange_pred(pred_df,sample_token)
+        dets_all = arrange_pred_score(pred_df,sample_token)
 
         dets_8corner = [convert_3dbox_to_8corner(det_tmp) for det_tmp in dets_all['dets']]
         if len(dets_8corner) > 0: dets_8corner = np.stack(dets_8corner, axis=0)
@@ -1519,6 +1521,10 @@ def arrange_pred_score(pred_df,sample_token):
         if w > l:
             w,l = l,w
             yaw += np.pi/2.0
+
+        # 1. +/- 180
+        # 2. All - add 180 (check with a submission)
+        yaw = clip_angle(normalize_angle(yaw))
 
         dets.append([x,y,z,yaw,l,w,h])
         additional_info.append([score,det_str2id[name]])
