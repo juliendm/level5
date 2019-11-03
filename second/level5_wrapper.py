@@ -489,7 +489,7 @@ def create_boxes_from_val(loc,dim,yaw,name,number,phi=0.0):
 
                 [dim[box_index][2],dim[box_index][0],dim[box_index][1]], # dim == lhw; need wlh
           
-                Quaternion(axis=[0,0,1], angle=-yaw[box_index]+np.pi/2.0),
+                Quaternion(axis=[0,0,1], angle=-(yaw[box_index]+phi*np.pi/180.0)+np.pi/2.0),
 
                 name=name_map_reverse[name[box_index]],
                 token="token",
@@ -1551,5 +1551,53 @@ def trackers_to_str_score(trackers):
         pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
 
     return pred_str
+
+
+
+
+# result_0 = concatenate_results([process_result(result_000,           0.0),
+#                                 process_result(result_180,        -np.pi)])
+# result_1 = concatenate_results([process_result(result_090,    -np.pi/2.0),
+#                                 process_result(result_270,-3.0*np.pi/2.0)])
+# result_2 = concatenate_results([process_result(result_045,    -np.pi/4.0),
+#                                 process_result(result_225,-5.0*np.pi/4.0)])
+# result_3 = concatenate_results([process_result(result_135,-3.0*np.pi/4.0),
+#                                 process_result(result_315,-7.0*np.pi/4.0)])
+
+# iou 0/1
+# 0 append unmatched 1
+
+# iou 0/2
+# 0 append unmatched 2
+
+# iou 0/3
+# 0 append unmatched 3
+
+
+def process_result(result,phi):
+    result_copy = copy.deepcopy(result)
+    for res in result_copy:
+        new_x =  np.cos(phi)*res['location'][:,0] + np.sin(phi)*res['location'][:,1]
+        new_y = -np.sin(phi)*res['location'][:,0] + np.cos(phi)*res['location'][:,1]
+        res['location'][:,0] = new_x
+        res['location'][:,1] = new_y
+        res['rotation_y'] += phi
+    return result_copy
+
+def concatenate_results(results):
+    length = len(results[0])
+    new_result = copy.deepcopy(results[0])
+    for index in range(length):
+        for key in new_result[index].keys():
+            arg = (results[0][index][key],)
+            for result in results[1:]:
+                arg += (result[index][key],)
+            new_result[index][key] = np.concatenate(arg)
+        sort_index = np.argsort(new_result[index]['score'])[::-1]
+        for key in new_result[index].keys():
+            new_result[index][key] = new_result[index][key][sort_index]
+
+    return new_result
+
 
 

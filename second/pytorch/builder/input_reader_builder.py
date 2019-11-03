@@ -50,7 +50,8 @@ def build(input_reader_config,
           model_config,
           training,
           voxel_generator,
-          target_assigner=None) -> DatasetWrapper:
+          target_assigner=None,
+          angle_deg=0.0) -> DatasetWrapper:
     """Builds a tensor dictionary based on the InputReader config.
 
     Args:
@@ -67,6 +68,6 @@ def build(input_reader_config,
         raise ValueError('input_reader_config not of type '
                          'input_reader_pb2.InputReader.')
     dataset = dataset_builder.build(input_reader_config, model_config,
-                                    training, voxel_generator, target_assigner)
+                                    training, voxel_generator, target_assigner, angle_deg=angle_deg)
     dataset = DatasetWrapper(dataset)
     return dataset
