@@ -1555,6 +1555,45 @@ def trackers_to_str_score(trackers):
 
 
 
+
+
+
+
+# folder = 'level5_model/eval_results/step_330252/'
+
+# pickle_filename = folder + 'result_000.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_000 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_045.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_045 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_090.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_090 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_135.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_135 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_180.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_180 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_225.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_225 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_270.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_270 = pickle.load(pickle_file)
+
+# pickle_filename = folder + 'result_315.pkl'
+# with open(pickle_filename, 'rb') as pickle_file:
+#     result_315 = pickle.load(pickle_file)
+
+
 # result_0 = concatenate_results([process_result(result_000,           0.0),
 #                                 process_result(result_180,        -np.pi)])
 # result_1 = concatenate_results([process_result(result_090,    -np.pi/2.0),
@@ -1564,14 +1603,13 @@ def trackers_to_str_score(trackers):
 # result_3 = concatenate_results([process_result(result_135,-3.0*np.pi/4.0),
 #                                 process_result(result_315,-7.0*np.pi/4.0)])
 
-# iou 0/1
-# 0 append unmatched 1
+# print('1')
+# new_res = concatenate_no_overlap(result_0,result_1)
+# print('2')
+# new_res = concatenate_no_overlap(new_res, result_2)
+# print('3')
+# new_res = concatenate_no_overlap(new_res, result_3)
 
-# iou 0/2
-# 0 append unmatched 2
-
-# iou 0/3
-# 0 append unmatched 3
 
 
 def process_result(result,phi):
@@ -1598,6 +1636,52 @@ def concatenate_results(results):
             new_result[index][key] = new_result[index][key][sort_index]
 
     return new_result
+
+
+
+def concatenate_no_overlap(primary_result,secondary_result):
+
+    length = len(primary_result)
+    new_result = copy.deepcopy(primary_result)
+
+    for index in range(length):
+
+        prim_8corner = arrange_case(primary_result[index])
+        sec_8corner  = arrange_case(secondary_result[index])
+
+        matched, unmatched_prim, unmatched_sec = associate_detections_to_trackers(prim_8corner, sec_8corner, iou_threshold=0.1)
+
+        if len(unmatched_sec) > 0:
+            for key in new_result[index].keys():
+                new_result[index][key] = np.concatenate((primary_result[index][key],secondary_result[index][key][unmatched_sec]))
+        sort_index = np.argsort(new_result[index]['score'])[::-1]
+        for key in new_result[index].keys():
+            new_result[index][key] = new_result[index][key][sort_index]
+
+    return new_result
+
+def arrange_case(case):
+    dets = []
+    for index in range(len(case['score'])):
+        loc = case['location']
+        dim = case['dimensions']
+        yaw = case['rotation_y']
+
+        x,y,z = loc[index][0],loc[index][1],loc[index][2]+dim[index][1]/2.0
+        w,l,h = dim[index][2],dim[index][0],dim[index][1] # dim == lhw; need wlh
+        yaw = -yaw[index]+np.pi/2.0
+        dets.append([x,y,z,yaw,l,w,h])
+
+    dets_8corner = [convert_3dbox_to_8corner(det_tmp) for det_tmp in np.array(dets)]
+    if len(dets_8corner) > 0: dets_8corner = np.stack(dets_8corner, axis=0)
+    else: dets_8corner = []
+
+    return dets_8corner
+
+
+
+
+
 
 
 
