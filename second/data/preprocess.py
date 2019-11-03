@@ -303,7 +303,7 @@ def prep_pointcloud(input_dict,
     return example
 
 
-def _read_and_prep_v9(info, root_path, num_point_features, prep_func):
+def _read_and_prep_v9(info, root_path, num_point_features, prep_func,angle_deg=0.0):
     """read data from KITTI-format infos, then call prep function.
     """
     # velodyne_path = str(pathlib.Path(root_path) / info['velodyne_path'])
@@ -318,14 +318,13 @@ def _read_and_prep_v9(info, root_path, num_point_features, prep_func):
         str(v_path), dtype=np.float32,
         count=-1).reshape([-1, num_point_features])
 
-    # points = np.fromfile(
-    #     str(v_path), dtype=np.float32,
-    #     count=-1).reshape((-1, 6))[:, : num_point_features]
-        
-#     points = np.fromfile(
-#         str(v_path), dtype=np.float32,
-#         count=-1).reshape((-1, 4))
-#     points[:,3] = 100.0
+    phi = angle_deg*np.pi/180.0
+    print(angle_deg)
+
+    new_x =  np.cos(phi)*points[:, 0] + np.sin(phi)*points[:, 1]
+    new_y = -np.sin(phi)*points[:, 0] + np.cos(phi)*points[:, 1]
+    points[:, 0] = new_x
+    points[:, 1] = new_y
 
 
     image_idx = info['image_idx']

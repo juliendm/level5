@@ -573,7 +573,8 @@ def evaluate(config_path,
              predict_test=False,
              ckpt_path=None,
              ref_detfile=None,
-             pickle_result=True):
+             pickle_result=True,
+             angle_deg=0.0):
     model_dir = pathlib.Path(model_dir)
     if predict_test:
         result_name = 'predict_test'
@@ -620,7 +621,8 @@ def evaluate(config_path,
         model_cfg,
         training=False,
         voxel_generator=voxel_generator,
-        target_assigner=target_assigner)
+        target_assigner=target_assigner,
+        angle_deg=angle_deg)
     eval_dataloader = torch.utils.data.DataLoader(
         eval_dataset,
         batch_size=input_cfg.batch_size,
@@ -670,7 +672,7 @@ def evaluate(config_path,
         # result = get_coco_eval_result(gt_annos, dt_annos, class_names)
         # print(result)
     if pickle_result:
-        with open(result_path_step / "result.pkl", 'wb') as f:
+        with open(result_path_step / ("result_%03d.pkl" % angle_deg), 'wb') as f:
             pickle.dump(dt_annos, f)
 
 

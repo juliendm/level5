@@ -34,7 +34,8 @@ def build(input_reader_config,
           model_config,
           training,
           voxel_generator,
-          target_assigner=None):
+          target_assigner=None,
+          angle_deg=0.0):
     """Builds a tensor dictionary based on the InputReader config.
 
     Args:
@@ -106,6 +107,7 @@ def build(input_reader_config,
         num_point_features=num_point_features,
         target_assigner=target_assigner,
         feature_map_size=feature_map_size,
-        prep_func=prep_func)
+        prep_func=prep_func,
+        angle_deg=angle_deg)
 
     return dataset

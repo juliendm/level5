@@ -28,13 +28,14 @@ class Dataset(object):
 
 class KittiDataset(Dataset):
     def __init__(self, info_path, root_path, num_point_features,
-                 target_assigner, feature_map_size, prep_func):
+                 target_assigner, feature_map_size, prep_func, angle_deg=0.0):
         with open(info_path, 'rb') as f:
             infos = pickle.load(f)
         #self._kitti_infos = kitti.filter_infos_by_used_classes(infos, class_names)
         self._root_path = root_path
         self._kitti_infos = infos
         self._num_point_features = num_point_features
+        self._angle_deg = angle_deg
         print("remain number of infos:", len(self._kitti_infos))
         # generate anchors cache
         # [352, 400]
@@ -65,4 +66,5 @@ class KittiDataset(Dataset):
             info=self._kitti_infos[idx],
             root_path=self._root_path,
             num_point_features=self._num_point_features,
-            prep_func=self._prep_func)
+            prep_func=self._prep_func,
+            angle_deg=self._angle_deg)
