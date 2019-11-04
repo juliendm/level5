@@ -1001,6 +1001,8 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
     # df_submission.to_csv('submission.csv',index=False)
 
     submission_kf = {}
+    object_types = ['car','other_vehicle','bus','truck']
+
 
     for scene_token in [scene_token]:
     
@@ -1014,11 +1016,14 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
         # Forward Pass
         #
         print('Forward Pass')
-        
-        mot_tracker = AB3DMOT(max_age=max_age,min_hits=0) 
-        mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
-        mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+
         KalmanBoxTracker.count = 0
+        mot_trackers = []
+        for object_type in object_types:
+            mot_tracker = AB3DMOT(max_age=max_age,min_hits=0) 
+            mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
+            mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+            mot_trackers.append(mot_tracker)
 
         sample_token = scene_record['first_sample_token']
         sample_index = -1
@@ -1026,19 +1031,20 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
             sample_index += 1
             sample_record = lyftdata.get("sample", sample_token)
  
-            dets_all = arrange_pred_score(pred_df,sample_token)
+            for mot_tracker,object_type in zip(mot_trackers,object_types):
+                dets_all = arrange_pred_score(pred_df,sample_token,object_type)
+                mot_tracker.update(dets_all)
             
-            mot_tracker.update(dets_all)
-            
-            for tracker in mot_tracker.trackers:
-                #print(tracker.kf.x.shape)
-                if not tracker.id in history:
-                    history[tracker.id] = {'hits':[0]*(mot_tracker.frame_count-1),
-                                           'states':[[np.nan]*len(tracker.get_state())]*(mot_tracker.frame_count-1),
-                                           'infos':[[np.nan]*len(tracker.info)]*(mot_tracker.frame_count-1)}
-                history[tracker.id]['hits'].append(1 if tracker.time_since_update == 0 else 0)
-                history[tracker.id]['states'].append(list(tracker.get_state()))
-                history[tracker.id]['infos'].append(list(tracker.info))
+            for mot_tracker,object_type in zip(mot_trackers,object_types):
+                for tracker in mot_tracker.trackers:
+                    #print(tracker.kf.x.shape)
+                    if not tracker.id in history:
+                        history[tracker.id] = {'hits':[0]*(mot_tracker.frame_count-1),
+                                               'states':[[np.nan]*len(tracker.get_state())]*(mot_tracker.frame_count-1),
+                                               'infos':[[np.nan]*len(tracker.info)]*(mot_tracker.frame_count-1)}
+                    history[tracker.id]['hits'].append(1 if tracker.time_since_update == 0 else 0)
+                    history[tracker.id]['states'].append(list(tracker.get_state()))
+                    history[tracker.id]['infos'].append(list(tracker.info))
 
             last_sample_token = sample_token
 
@@ -1060,68 +1066,87 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
             history[tracker_id]['states'] = np.array(history[tracker_id]['states'])
             history[tracker_id]['infos'] = np.array(history[tracker_id]['infos'])
         
-        # history = filter_single(history) # Might get them back in Backward Pass, and if not, probably False Positive
+        history = filter_single(history) # Might get them back in Backward Pass, and if not, probably False Positive
+
+        history = filter_yaw_jumps(history) # Definitely False Positives!!!
+
         # TODO: Play with Value!!!!!!!!!!!
         
-        history_stationary, history_moving = separate_history(history, std_threshold=std_threshold) # Based on Std
-        
+        history_stationary, history_moving = separate_history(history, std_threshold=std_threshold) # Based on Std        
         history_moving, history_misclassified = filter_moving(history_moving)
 
-        # value_stationary = keep_last_one_or_avergare_first_two(history_stationary, history_misclassified)
-        # override_with_last_dims(history_moving)
-
-
+        override_with_average_dims(history_stationary)
+        override_with_average_locs(history_stationary)
+        override_with_average_dims(history_moving)
 
         # for tracker_id in history_moving.keys():
         #     print(history_moving[tracker_id]['hits'],history_moving[tracker_id]['std'])
         
+        #
+        # Backward Pass
+        #
+        print('Backward Pass')
 
-        # #
-        # # Backward Pass
-        # #
-        # print('Backward Pass')
+        # Do Backward Pass for both Moving/Stationary !!!!!!!!!!!!!!
         
-        # mot_tracker = AB3DMOT(max_age=max_age,min_hits=0) 
-        # mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
-        # mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
-        # KalmanBoxTracker.count = 10000000000 # In order to guarantee that we don't mix with manually created tracker
+        KalmanBoxTracker.count = 1000000000000000 # In order to guarantee that we don't mix with manually created tracker
+        mot_trackers = []
+        for object_type in object_types:
+            mot_tracker = AB3DMOT(max_age=max_age,min_hits=0) 
+            mot_tracker.reorder = [0, 1, 2, 3, 4, 5, 6]
+            mot_tracker.reorder_back = [0, 1, 2, 3, 4, 5, 6]
+            mot_trackers.append(mot_tracker)
+
+        sample_token = last_sample_token # scene_record['last_sample_token']
+        biggest_sample_index = sample_index
+
+        trackers_already_created = []
         
-        # sample_token = last_sample_token # scene_record['last_sample_token']
-        # biggest_sample_index = sample_index
+        while sample_token:
+            sample_record = lyftdata.get("sample", sample_token)
 
-        # trackers_already_created = []
+            trackers_just_created = []
+
+            for history_local in [history_moving]: # ADD history_stationary ???????????????????????
+                # Create one tracker for each in history
+                for tracker_id in history_local.keys():
+                    if tracker_id not in trackers_already_created:
+                        state = history_local[tracker_id]['states'][sample_index]
+                        if not np.isnan(state).any():
+                            trackers_already_created.append(tracker_id)
+                            trackers_just_created.append(tracker_id)
+                            info = history_local[tracker_id]['infos'][sample_index]
+                            tracker = KalmanBoxTracker(state, info)
+                            tracker.id = tracker_id
+                            object_type = det_id2str[info[1]]
+                            index_tracker = object_types.index(object_type)
+                            mot_trackers[index_tracker].trackers.append(tracker)
+                
+                if sample_index < biggest_sample_index:
+                    for mot_tracker,object_type in zip(mot_trackers,object_types):
+                        dets_all = arrange_history(history_local,sample_index,pred_df,sample_token,trackers_already_created,object_type) # If history has NaNs and tracker already created: dets_all = arrange_pred(pred_df,sample_token)
+                        mot_tracker.update(dets_all) # Maybe ok to do it for all since only modify NaNs from history_local, and trackers are garanteed momentum from multiple samples
+
+                for mot_tracker,object_type in zip(mot_trackers,object_types):
+                    for tracker in mot_tracker.trackers: # And then never Create a new tracker. Or in practice, ignore any trackers beyond given length
+                        if tracker.id in history_local:
+                            if np.isnan(history_local[tracker.id]['states'][sample_index]).any():
+                                history_local[tracker.id]['hits'][sample_index] = 1 if tracker.time_since_update == 0 else 0
+                                history_local[tracker.id]['states'][sample_index][:4] = tracker.get_state()[:4]
+                                history_local[tracker.id]['infos'][sample_index] = history_local[tracker.id]['infos'][sample_index+1]
+
+                                # WARNING: WILL THAT UPDATE HISTORY_MOVING??????
+
+            sample_index -= 1
+            sample_token = sample_record['prev']
         
-        # while sample_token:
-        #     sample_record = lyftdata.get("sample", sample_token)
 
-        #     trackers_just_created = []
 
-        #     # Create one tracker for each in history_moving
-        #     for tracker_id in history_moving.keys():
-        #         if tracker_id not in trackers_already_created:
-        #             state = history_moving[tracker_id]['states'][sample_index]
-        #             if not np.isnan(state).any():
-        #                 trackers_already_created.append(tracker_id)
-        #                 trackers_just_created.append(tracker_id)
-        #                 info = history_moving[tracker_id]['infos'][sample_index]
-        #                 tracker = KalmanBoxTracker(state, info)
-        #                 tracker.id = tracker_id
-        #                 mot_tracker.trackers.append(tracker)
-            
-        #     if sample_index < biggest_sample_index:
-        #         dets_all = arrange_history(history_moving,sample_index,pred_df,sample_token,trackers_already_created) # If history has NaNs and tracker already created: dets_all = arrange_pred(pred_df,sample_token)
-        #         mot_tracker.update(dets_all) # Maybe ok to do it for all since only modify NaNs from history_moving, and trackers are garanteed momentum from multiple samples
+        # NEED TO REDO THIS ??????????????????????
+        # override_with_average_dims(history_stationary)
+        # override_with_average_locs(history_stationary)
+        # override_with_average_dims(history_moving)
 
-        #     for tracker in mot_tracker.trackers: # And then never Create a new tracker. Or in practice, ignore any trackers beyond given length
-        #         if tracker.id in history_moving:
-        #             if np.isnan(history_moving[tracker.id]['states'][sample_index]).any():
-        #                 history_moving[tracker.id]['hits'][sample_index] = 1 if tracker.time_since_update == 0 else 0
-        #                 history_moving[tracker.id]['states'][sample_index][:4] = tracker.get_state()[:4]
-        #                 history_moving[tracker.id]['infos'][sample_index] = history_moving[tracker.id]['infos'][sample_index+1]
-
-        #     sample_index -= 1
-        #     sample_token = sample_record['prev']
-        
         #
         # Remove Extrapolation - Keep only interpolation
         #
@@ -1131,8 +1156,26 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
         #     no_extrapolation(value_stationary[tracker_id]['hits'])
         # Maybe can exterpolate stationary !!!!!!!!!!!!!!!!!!!!!!! And check !!!!!!!!!!!!!
 
+        for tracker_id in history_stationary.keys():
+            no_extrapolation(history_stationary[tracker_id]['hits'])
         for tracker_id in history_moving.keys():
             no_extrapolation(history_moving[tracker_id]['hits'])
+
+
+        # fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+        # for tracker_id in history_stationary.keys():
+        #     hits = history_stationary[tracker_id]['hits']
+        #     mask = np.ones(hits.shape[0], dtype=bool)
+        #     mask = np.logical_and(mask, hits != -1)
+        #     plt.plot(history_stationary[tracker_id]['states'][mask,5],'r')
+        # for tracker_id in history_moving.keys():
+        #     hits = history_moving[tracker_id]['hits']
+        #     mask = np.ones(hits.shape[0], dtype=bool)
+        #     mask = np.logical_and(mask, hits != -1)          
+        #     plt.plot(history_moving[tracker_id]['states'][mask,5],'b')
+        # plt.ylim(0,5)
+        # plt.show()
+
 
         #  
         # Use Candidates to make submission
@@ -1154,59 +1197,29 @@ def submission_kalman_filter_bis(scene_token,lyftdata,pred_df,std_threshold=0.5,
  
             pred_str = ''
 
-            # Stationary
-            #for tracker_id in value_stationary.keys():
-            for tracker_id in history_stationary.keys():
+            for history_local in [history_stationary,history_moving]:
+  
+                for tracker_id in history_local.keys():
 
-                # hit = value_stationary[tracker_id]['hits'][sample_index]
-                hit = history_stationary[tracker_id]['hits'][sample_index]
+                    hit = history_local[tracker_id]['hits'][sample_index]
 
-                if hit == -1:
-                    continue
+                    if hit == -1:
+                        continue
 
-                # state = value_stationary[tracker_id]['state']
-                state = history_stationary[tracker_id]['states'][sample_index]
+                    state = history_local[tracker_id]['states'][sample_index]
 
-                if hit == 0:
-                    continue
+                    if hit == 0:
+                        lidar_box = state_to_lidar_box(state,sample_token,lyftdata)
+                        if tracker_range(lidar_box) > 100.0:
+                            continue
+                        if number_of_points(lidar_box,points_v) < 2:
+                            continue
 
-                    # lidar_box = state_to_lidar_box(state,sample_token,lyftdata)
-                    # if tracker_range(lidar_box) > 100.0:
-                    #     continue
-                    # if number_of_points(lidar_box,points_v) < 2:
-                    #     continue
-
-                # info  = value_stationary[tracker_id]['info']
-                info  = history_stationary[tracker_id]['infos'][sample_index]
-                x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
-                score = info[0]
-                name = det_id2str[info[1]]
-                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
-
-            # Moving
-            for tracker_id in history_moving.keys():
-
-                hit = history_moving[tracker_id]['hits'][sample_index]
-
-                if hit == -1:
-                    continue
-
-                state = history_moving[tracker_id]['states'][sample_index]
-
-                if hit == 0:
-                    continue
-
-                    # lidar_box = state_to_lidar_box(state,sample_token,lyftdata)
-                    # if tracker_range(lidar_box) > 100.0:
-                    #     continue
-                    # if number_of_points(lidar_box,points_v) < 2:
-                    #     continue
-
-                info  = history_moving[tracker_id]['infos'][sample_index]
-                x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
-                score = info[0]
-                name = det_id2str[info[1]]
-                pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
+                    info  = history_local[tracker_id]['infos'][sample_index]
+                    x,y,z,yaw,l,w,h = state[0],state[1],state[2],state[3],state[4],state[5],state[6]
+                    score = info[0]
+                    name = det_id2str[info[1]]
+                    pred_str += '%f %f %f %f %f %f %f %f %s ' % (score,x,y,z,w,l,h,yaw,name)
 
             submission_kf[sample_token] = pred_str
 
@@ -1385,25 +1398,59 @@ def override_with_last_dims(history_moving):
         history_moving[tracker_id]['states'][:,5] = np.array([state[5]]*length)
         history_moving[tracker_id]['states'][:,6] = np.array([state[6]]*length)
 
-def arrange_history(history_moving,sample_index,pred_df,sample_token,trackers_already_created):
+def average_max_mode(vec,bins=5):
+
+    hist, bin_edges = np.histogram(vec,bins=bins)
+    index_max = np.argmax(hist)
+    edges = bin_edges[index_max:index_max+2]
+    mask = np.ones(vec.shape[0], dtype=bool)
+    mask = np.logical_and(mask, vec >= edges[0])
+    mask = np.logical_and(mask, vec <= edges[1])
+    return np.mean(vec[mask])
+
+def override_with_average_dims(history):
+    
+    for tracker_id in history.keys():
+        states = history[tracker_id]['states']
+        length = len(states)
+        states = states[~np.isnan(states).any(axis=1)]
+        history[tracker_id]['states'][:,4] = np.array([average_max_mode(states[:,4])]*length)
+        history[tracker_id]['states'][:,5] = np.array([average_max_mode(states[:,5])]*length)
+        history[tracker_id]['states'][:,6] = np.array([average_max_mode(states[:,6])]*length)
+
+def override_with_average_locs(history):
+    
+    for tracker_id in history.keys():
+        states = history[tracker_id]['states']
+        length = len(states)
+        states = states[~np.isnan(states).any(axis=1)]
+        history[tracker_id]['states'][:,0] = np.array([average_max_mode(states[:,0])]*length)
+        history[tracker_id]['states'][:,1] = np.array([average_max_mode(states[:,1])]*length)
+        history[tracker_id]['states'][:,2] = np.array([average_max_mode(states[:,2])]*length)
+        history[tracker_id]['states'][:,3] = np.array([average_max_mode(states[:,3])]*length)
+
+def arrange_history(history,sample_index,pred_df,sample_token,trackers_already_created,object_type):
 
     dets = []
     additional_info = []
 
     has_nan = False
 
-    for tracker_id in history_moving.keys():
-        if not np.isnan(history_moving[tracker_id]['states'][sample_index]).any():
-            dets.append(list(history_moving[tracker_id]['states'][sample_index]))
-            additional_info.append(list(history_moving[tracker_id]['infos'][sample_index]))
-        elif tracker_id in trackers_already_created:
-            has_nan = True  
+    for tracker_id in history.keys():
+        info = history[tracker_id]['infos'][sample_index]
+        if det_id2str[info[1]] == object_type:
+            state = history[tracker_id]['states'][sample_index]
+            if not np.isnan(state).any():
+                dets.append(list(state))
+                additional_info.append(list(info))
+            elif tracker_id in trackers_already_created:
+                has_nan = True  
 
     trks_all = {'dets': np.array(dets), 'info': np.array(additional_info)}
 
     if has_nan:
 
-        dets_all = arrange_pred_score(pred_df,sample_token)
+        dets_all = arrange_pred_score(pred_df,sample_token,object_type)
 
         dets_8corner = [convert_3dbox_to_8corner(det_tmp) for det_tmp in dets_all['dets']]
         if len(dets_8corner) > 0: dets_8corner = np.stack(dets_8corner, axis=0)
@@ -1442,7 +1489,7 @@ def arrange_pred(pred_df,sample_token):
         # 1. +/- 180
         # 2. All - add 180 (check with a submission)
         yaw = normalize_angle(yaw)
-        # yaw = clip_angle(yaw)
+        yaw = clip_angle(yaw)
 
         dets.append([x,y,z,yaw,l,w,h])
         additional_info.append([det_str2id[name]])
@@ -1451,7 +1498,7 @@ def arrange_pred(pred_df,sample_token):
 
     return dets_all
 
-def arrange_pred_score(pred_df,sample_token):
+def arrange_pred_score(pred_df,sample_token,object_type):
 
     predictions = pred_df.loc[pred_df['Id'] == sample_token].iloc[0]['PredictionString']
     predictions = np.array(predictions.split()).reshape(-1,9)
@@ -1459,21 +1506,24 @@ def arrange_pred_score(pred_df,sample_token):
     dets = []
     additional_info = []
     for val in predictions:
-        score,x,y,z,w,l,h,yaw,name = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7]),val[8]
-        # if w > l:
-        #     w,l = l,w
-        #     yaw += np.pi/2.0
+        name = val[8]
+        if name == object_type:
+            score,x,y,z,w,l,h,yaw = float(val[0]),float(val[1]),float(val[2]),float(val[3]),float(val[4]),float(val[5]),float(val[6]),float(val[7])
+        
+            # if w > l:
+            #     w,l = l,w
+            #     yaw += np.pi/2.0
 
-        # 1. +/- 180
-        # 2. All - add 180 (check with a submission)
+            # 1. +/- 180
+            # 2. All - add 180 (check with a submission)
 
-        yaw = normalize_angle(yaw)
-        # yaw = clip_angle(yaw)
+            yaw = normalize_angle(yaw)
+            yaw = clip_angle(yaw)
 
-        dets.append([x,y,z,yaw,l,w,h])
-        additional_info.append([score,det_str2id[name]])
+            dets.append([x,y,z,yaw,l,w,h])
+            additional_info.append([score,det_str2id[name]])
 
-    dets_all = {'dets': np.array(dets), 'info': np.array(additional_info)}
+    dets_all = {'dets': np.array(dets).reshape(-1,7), 'info': np.array(additional_info).reshape(-1,2)}
 
     return dets_all
 
